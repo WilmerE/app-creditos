@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
+import 'features/clientes/presentation/screens/client_list_screen.dart';
 
 class CreditosApp extends StatelessWidget {
   const CreditosApp({super.key});
@@ -10,8 +11,34 @@ class CreditosApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gestión de Créditos',
       theme: AppTheme.light,
-      home: const Scaffold(
-        body: Center(child: Text('Gestión de Créditos y Cobros')),
+      home: const _HomeScreen(),
+    );
+  }
+}
+
+class _HomeScreen extends StatelessWidget {
+  const _HomeScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Gestión de Créditos y Cobros'),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ClientListScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.people_outline),
+              label: const Text('Clientes'),
+            ),
+          ],
+        ),
       ),
     );
   }

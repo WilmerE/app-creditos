@@ -15,12 +15,41 @@ class SyncMetadata extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [SyncMetadata, Payments])
+@DataClassName('ClientRow')
+class ClientsTable extends Table {
+  @override
+  String get tableName => 'clients';
+
+  TextColumn get id => text()();
+  TextColumn get fullName => text()();
+  TextColumn get address => text()();
+  TextColumn get dpi => text().nullable()();
+  TextColumn get dpiFolder => text().nullable()();
+  TextColumn get alias => text().nullable()();
+  TextColumn get photoPath => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+class ClientPhones extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get clientId => text()();
+  TextColumn get phoneNumber => text()();
+  IntColumn get position => integer().withDefault(const Constant(0))();
+}
+
+@DriftDatabase(tables: [SyncMetadata, Payments, ClientsTable, ClientPhones])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  AppDatabase.forTesting(super.executor);
+
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -44,6 +73,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from >= 2 && from < 3) {
         await migrator.addColumn(payments, payments.cardId);
+      }
+      if (from < 4) {
+        await migrator.createTable(clientsTable);
+        await migrator.createTable(clientPhones);
       }
     },
   );
