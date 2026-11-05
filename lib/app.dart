@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/clientes/presentation/screens/client_list_screen.dart';
+import 'features/cobros_tarjetas/presentation/screens/card_creation_screen.dart';
 
 class CreditosApp extends StatelessWidget {
   const CreditosApp({super.key});
@@ -31,7 +32,13 @@ class _HomeScreen extends StatelessWidget {
             FilledButton.icon(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => const ClientListScreen(),
+                  builder: (_) => ClientListScreen(
+                    onCreateCard: (client) => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CardCreationScreen(client: client),
+                      ),
+                    ),
+                  ),
                 ),
               ),
               icon: const Icon(Icons.people_outline),

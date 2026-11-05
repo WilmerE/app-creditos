@@ -21,8 +21,18 @@ import 'package:creditos/features/clientes/domain/repositories/client_repository
     as _i743;
 import 'package:creditos/features/clientes/presentation/bloc/client_bloc.dart'
     as _i858;
+import 'package:creditos/features/cobros_tarjetas/data/datasources/local/credit_card_local_data_source.dart'
+    as _i598;
 import 'package:creditos/features/cobros_tarjetas/data/datasources/local/payment_local_data_source.dart'
     as _i950;
+import 'package:creditos/features/cobros_tarjetas/data/repositories/credit_card_repository_impl.dart'
+    as _i478;
+import 'package:creditos/features/cobros_tarjetas/domain/repositories/credit_card_repository.dart'
+    as _i112;
+import 'package:creditos/features/cobros_tarjetas/domain/use_cases/credit_card_creation.dart'
+    as _i313;
+import 'package:creditos/features/cobros_tarjetas/presentation/bloc/card_creation_cubit.dart'
+    as _i1050;
 import 'package:creditos/injection_container.dart' as _i568;
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
@@ -45,6 +55,9 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i770.ClientLocalDataSource>(
       () => _i770.ClientLocalDataSource(gh<_i331.AppDatabase>()),
     );
+    gh.lazySingleton<_i598.CreditCardLocalDataSource>(
+      () => _i598.CreditCardLocalDataSource(gh<_i331.AppDatabase>()),
+    );
     gh.lazySingleton<_i743.ClientRepository>(
       () => _i806.ClientRepositoryImpl(
         gh<_i770.ClientLocalDataSource>(),
@@ -53,6 +66,19 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.factory<_i858.ClientBloc>(
       () => _i858.ClientBloc(gh<_i743.ClientRepository>()),
+    );
+    gh.lazySingleton<_i112.CreditCardRepository>(
+      () =>
+          _i478.CreditCardRepositoryImpl(gh<_i598.CreditCardLocalDataSource>()),
+    );
+    gh.factory<_i313.CreditCardCreation>(
+      () => _i313.CreditCardCreation(gh<_i112.CreditCardRepository>()),
+    );
+    gh.factory<_i1050.CardCreationCubit>(
+      () => _i1050.CardCreationCubit(
+        gh<_i743.ClientRepository>(),
+        gh<_i313.CreditCardCreation>(),
+      ),
     );
     return this;
   }

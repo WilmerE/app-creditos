@@ -24,4 +24,16 @@
 - **Pendientes para el Equipo A:** Ninguno.
 - **Contexto técnico / Breaking Changes:** Migración v3→v4 crea ambas tablas. `AppDatabase.forTesting` para pruebas en memoria.
 
+## [Equipo A / Agente UI] - 2026-11-04
+- **Módulo modificado:** `features/cobros_tarjetas/presentation`
+- **Cambios realizados:** `CardCreationScreen` + `CardCreationCubit`: cliente (o preseleccionado), montos rápidos/personalizado, plan alterno 4x320 / 7x210 para Q1,000, vista previa FECHA/ABONO/RESTA, color de historial y guardado bloqueado por el candado. El menú «Crear tarjeta digital» de Clientes abre esta pantalla (cableado en `app.dart`).
+- **Pendientes para el Equipo B:** Abrir `TarjetaDigitalWidget` con el `cardId` devuelto al crear; contar tarjetas activas en `Client.activeCardsCount`.
+- **Contexto técnico / Breaking Changes:** La pantalla hace `pop(cardId)` al guardar.
+
+## [Equipo B / Agente Data&Sync] - 2026-11-04
+- **Módulo modificado:** `core/database`, `features/cobros_tarjetas/{domain,data}`
+- **Cambios realizados:** Tabla `cards` (esquema v5, FK a `clients`), `PaymentPlanCalculator` (puro), `CreditCardCreation` (candado: pendiente = cuotas*monto - SUM(abonos) de tarjetas Activa/Deudor/Renovación debe ser Q0), `CreditCardRepository` y datasource local. Crear tarjeta es transaccional (tarjeta + cuotas) y marca como `paid` las tarjetas liquidadas; si hay tarjetas previas la nueva queda en `renewal` con cuotas `isRenewal`.
+- **Pendientes para el Equipo A:** Ninguno.
+- **Contexto técnico / Breaking Changes:** Migración v4→v5 crea `cards`. Primer cobro: sábado de la semana del siguiente lunes, luego semanal. Montos >Q2,000 requieren múltiplos de Q250 (semanas = monto/1000*4).
+
 ---

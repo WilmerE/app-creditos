@@ -42,14 +42,36 @@ class ClientPhones extends Table {
   IntColumn get position => integer().withDefault(const Constant(0))();
 }
 
-@DriftDatabase(tables: [SyncMetadata, Payments, ClientsTable, ClientPhones])
+@DataClassName('CardRow')
+class CardsTable extends Table {
+  @override
+  String get tableName => 'cards';
+
+  TextColumn get id => text()();
+  TextColumn get clientId => text().references(ClientsTable, #id)();
+  RealColumn get requestedAmount => real()();
+  RealColumn get deliveredAmount => real()();
+  IntColumn get totalInstallments => integer()();
+  RealColumn get weeklyAmount => real()();
+  TextColumn get status => text().withDefault(const Constant('active'))();
+  TextColumn get colorHex => text().withDefault(const Constant('#800020'))();
+  DateTimeColumn get startDate => dateTime()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+@DriftDatabase(
+  tables: [SyncMetadata, Payments, ClientsTable, ClientPhones, CardsTable],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -77,6 +99,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 4) {
         await migrator.createTable(clientsTable);
         await migrator.createTable(clientPhones);
+      }
+      if (from < 5) {
+        await migrator.createTable(cardsTable);
       }
     },
   );
