@@ -10,28 +10,35 @@ import '../bloc/client_bloc.dart';
 import '../widgets/client_avatar.dart';
 import 'client_form_screen.dart';
 
-enum _ClientAction { edit, createCard, call, whatsApp }
+enum _ClientAction { edit, createCard, viewCards, call, whatsApp }
 
 class ClientListScreen extends StatelessWidget {
-  const ClientListScreen({super.key, this.onCreateCard});
+  const ClientListScreen({super.key, this.onCreateCard, this.onOpenCards});
 
   /// Hook for the cobros_tarjetas feature; defaults to an informative message.
   final void Function(Client client)? onCreateCard;
+
+  /// Hook to open the client's digital cards.
+  final void Function(Client client)? onOpenCards;
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) =>
           getIt<ClientBloc>()..add(const ClientsSubscriptionRequested()),
-      child: _ClientListView(onCreateCard: onCreateCard),
+      child: _ClientListView(
+        onCreateCard: onCreateCard,
+        onOpenCards: onOpenCards,
+      ),
     );
   }
 }
 
 class _ClientListView extends StatefulWidget {
-  const _ClientListView({this.onCreateCard});
+  const _ClientListView({this.onCreateCard, this.onOpenCards});
 
   final void Function(Client client)? onCreateCard;
+  final void Function(Client client)? onOpenCards;
 
   @override
   State<_ClientListView> createState() => _ClientListViewState();
@@ -85,6 +92,13 @@ class _ClientListViewState extends State<_ClientListView> {
             context,
             'Crear tarjeta para ${client.fullName}: próximamente.',
           );
+        }
+      case _ClientAction.viewCards:
+        final callback = widget.onOpenCards;
+        if (callback != null) {
+          callback(client);
+        } else {
+          _snack(context, 'Ver tarjetas de ${client.fullName}: próximamente.');
         }
       case _ClientAction.call:
       case _ClientAction.whatsApp:
@@ -246,6 +260,10 @@ class _ClientCard extends StatelessWidget {
                   PopupMenuItem(
                     value: _ClientAction.createCard,
                     child: Text('Crear tarjeta digital'),
+                  ),
+                  PopupMenuItem(
+                    value: _ClientAction.viewCards,
+                    child: Text('Ver tarjetas'),
                   ),
                   PopupMenuItem(
                     value: _ClientAction.call,

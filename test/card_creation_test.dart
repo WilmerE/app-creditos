@@ -5,13 +5,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:creditos/core/database/app_database.dart';
+import 'package:creditos/core/database/transaction_runner.dart';
 import 'package:creditos/core/utils/currency_formatter.dart';
 import 'package:creditos/features/clientes/data/datasources/client_local_datasource.dart';
 import 'package:creditos/features/clientes/domain/entities/client.dart';
 import 'package:creditos/features/cobros_tarjetas/data/datasources/local/credit_card_local_data_source.dart';
+import 'package:creditos/features/cobros_tarjetas/data/datasources/local/payment_local_data_source.dart';
 import 'package:creditos/features/cobros_tarjetas/data/repositories/credit_card_repository_impl.dart';
 import 'package:creditos/features/cobros_tarjetas/domain/entities/credit_card.dart';
 import 'package:creditos/features/cobros_tarjetas/domain/services/payment_plan_calculator.dart';
+import 'package:creditos/features/cobros_tarjetas/domain/use_cases/create_card_with_new_client.dart';
 import 'package:creditos/features/cobros_tarjetas/domain/use_cases/credit_card_creation.dart';
 import 'package:creditos/features/cobros_tarjetas/presentation/bloc/card_creation_cubit.dart';
 import 'package:creditos/features/cobros_tarjetas/presentation/screens/card_creation_screen.dart';
@@ -94,7 +97,10 @@ void main() {
     setUp(() async {
       db = AppDatabase.forTesting(NativeDatabase.memory());
       await ClientLocalDataSource(db).insert(_client());
-      repo = CreditCardRepositoryImpl(CreditCardLocalDataSource(db));
+      repo = CreditCardRepositoryImpl(
+        CreditCardLocalDataSource(db),
+        PaymentLocalDataSource(db),
+      );
       creation = CreditCardCreation(repo);
     });
     tearDown(() => db.close());
@@ -143,11 +149,17 @@ void main() {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     await ClientLocalDataSource(db).insert(_client());
-    final cubit = CardCreationCubit(
-      _FakeClients(),
-      CreditCardCreation(
-        CreditCardRepositoryImpl(CreditCardLocalDataSource(db)),
+    final creation = CreditCardCreation(
+      CreditCardRepositoryImpl(
+        CreditCardLocalDataSource(db),
+        PaymentLocalDataSource(db),
       ),
+    );
+    final clients = _FakeClients();
+    final cubit = CardCreationCubit(
+      clients,
+      creation,
+      CreateCardWithNewClient(clients, creation, DriftTransactionRunner(db)),
     );
     addTearDown(cubit.close);
     tester.view.physicalSize = const Size(900, 2400);
@@ -178,4 +190,72 @@ void main() {
     await tester.pump();
     expect(cubit.state.plan!.installments, hasLength(7));
   });
+
+  test('new client mode creates client and card transactionally', () async {
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final local = ClientLocalDataSource(db);
+    final clients = _DbClients(local);
+    final creation = CreditCardCreation(
+      CreditCardRepositoryImpl(
+        CreditCardLocalDataSource(db),
+        PaymentLocalDataSource(db),
+      ),
+    );
+    final cubit = CardCreationCubit(
+      clients,
+      creation,
+      CreateCardWithNewClient(clients, creation, DriftTransactionRunner(db)),
+    );
+    addTearDown(cubit.close);
+
+    cubit
+      ..setMode(ClientMode.newClient)
+      ..selectAmount(500);
+    expect(cubit.state.canSubmit, isFalse);
+    cubit.updateDraft(const NewClientDraft(name: 'Luis', address: 'Zona 3'));
+    expect(cubit.state.canSubmit, isTrue);
+
+    await cubit.submit();
+    expect(cubit.state.status, CardCreationStatus.success);
+    final created = await local.findClients();
+    expect(created.single.fullName, 'Luis');
+    expect(
+      await CreditCardLocalDataSource(db).cardsForClient(created.single.id),
+      hasLength(1),
+    );
+    expect(await creation.blockedClientIds(), {created.single.id});
+
+    // A failing card creation rolls the client back.
+    final failing = CreateCardWithNewClient(
+      clients,
+      creation,
+      DriftTransactionRunner(db),
+    );
+    await expectLater(
+      failing(
+        client: Client(
+          id: 'c2',
+          fullName: 'Rollback',
+          address: 'x',
+          createdAt: DateTime(2024),
+          updatedAt: DateTime(2024),
+        ),
+        requestedAmount: 777,
+        colorHex: '#800020',
+      ),
+      throwsA(anything),
+    );
+    expect(await local.getById('c2'), isNull);
+  });
+}
+
+class _DbClients extends _FakeClients {
+  _DbClients(this._local);
+
+  final ClientLocalDataSource _local;
+
+  @override
+  Future<void> save(Client client, {String? newPhotoSourcePath}) =>
+      _local.insert(client);
 }

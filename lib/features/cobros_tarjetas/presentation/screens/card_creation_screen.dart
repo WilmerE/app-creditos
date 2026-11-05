@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../injection_container.dart';
 import '../../../clientes/domain/entities/client.dart';
+import '../../../clientes/presentation/widgets/client_avatar.dart';
+import '../../../clientes/presentation/widgets/client_photo_picker.dart';
 import '../../domain/services/payment_plan_calculator.dart';
 import '../bloc/card_creation_cubit.dart';
 
@@ -25,7 +27,7 @@ Color colorFromHex(String hex) =>
 class CardCreationScreen extends StatelessWidget {
   const CardCreationScreen({super.key, this.client});
 
-  /// When provided, the client selector is skipped.
+  /// When provided, the client selector and the new/existing switch are skipped.
   final Client? client;
 
   @override
@@ -93,36 +95,44 @@ class CardCreationViewState extends State<CardCreationView> {
                     child: ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
-                        if (widget.lockedClient)
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.person_outline),
-                            title: Text(state.client?.fullName ?? ''),
-                            subtitle: Text(state.client?.alias ?? ''),
-                          )
-                        else
-                          DropdownButtonFormField<Client>(
-                            initialValue: state.client,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Cliente',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: [
-                              for (final client in state.clients)
-                                DropdownMenuItem(
-                                  value: client,
-                                  child: Text(
-                                    client.fullName,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                        if (!widget.lockedClient) ...[
+                          SegmentedButton<ClientMode>(
+                            segments: const [
+                              ButtonSegment(
+                                value: ClientMode.existing,
+                                icon: Icon(Icons.people_outline),
+                                label: Text('Cliente Existente'),
+                              ),
+                              ButtonSegment(
+                                value: ClientMode.newClient,
+                                icon: Icon(Icons.person_add_alt_1_outlined),
+                                label: Text('Cliente Nuevo'),
+                              ),
                             ],
-                            onChanged: (client) {
-                              if (client != null) cubit.selectClient(client);
-                            },
+                            selected: {state.mode},
+                            onSelectionChanged: (s) => cubit.setMode(s.first),
                           ),
-                        if (state.renewalBlocked) ...[
+                          const SizedBox(height: 16),
+                        ],
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 200),
+                          alignment: Alignment.topCenter,
+                          child: state.mode == ClientMode.newClient
+                              ? _NewClientForm(
+                                  draft: state.draft,
+                                  onChanged: cubit.updateDraft,
+                                )
+                              : widget.lockedClient
+                              ? const SizedBox.shrink()
+                              : _ExistingClientSelector(state: state),
+                        ),
+                        const SizedBox(height: 12),
+                        _ClientHeaderPreview(
+                          state: state,
+                          color: colorFromHex(state.colorHex),
+                        ),
+                        if (state.mode == ClientMode.existing &&
+                            state.renewalBlocked) ...[
                           const SizedBox(height: 12),
                           Material(
                             color: theme.colorScheme.errorContainer,
@@ -260,6 +270,245 @@ class CardCreationViewState extends State<CardCreationView> {
                 ),
         );
       },
+    );
+  }
+}
+
+class _ExistingClientSelector extends StatefulWidget {
+  const _ExistingClientSelector({required this.state});
+
+  final CardCreationState state;
+
+  @override
+  State<_ExistingClientSelector> createState() =>
+      _ExistingClientSelectorState();
+}
+
+class _ExistingClientSelectorState extends State<_ExistingClientSelector> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<CardCreationCubit>();
+    final state = widget.state;
+    final theme = Theme.of(context);
+    final clients = state.visibleClients;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _search,
+          onChanged: cubit.setQuery,
+          decoration: const InputDecoration(
+            labelText: 'Buscar cliente (nombre, alias o DPI)',
+            prefixIcon: Icon(Icons.search),
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final entry in const {
+              ClientCardFilter.all: 'Todos',
+              ClientCardFilter.eligible: 'Sin tarjeta activa',
+              ClientCardFilter.withActiveCard: 'Con tarjeta activa',
+            }.entries)
+              ChoiceChip(
+                label: Text(entry.value),
+                selected: state.filter == entry.key,
+                onSelected: (_) => cubit.setFilter(entry.key),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 280),
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: clients.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No hay clientes que coincidan.'),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: clients.length,
+                  itemBuilder: (context, i) {
+                    final client = clients[i];
+                    final hasActive = state.hasActiveCard(client);
+                    return ListTile(
+                      selected: state.client?.id == client.id,
+                      leading: ClientAvatar(
+                        name: client.fullName,
+                        photoPath: client.photoPath,
+                        radius: 20,
+                      ),
+                      title: Text(
+                        client.fullName,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(client.alias ?? ''),
+                      trailing: hasActive
+                          ? Chip(
+                              avatar: Icon(
+                                Icons.lock_outline,
+                                size: 16,
+                                color: theme.colorScheme.error,
+                              ),
+                              label: const Text('Tarjeta activa'),
+                            )
+                          : const Chip(
+                              avatar: Icon(
+                                Icons.check_circle_outline,
+                                size: 16,
+                              ),
+                              label: Text('Apto'),
+                            ),
+                      onTap: () => cubit.selectClient(client),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NewClientForm extends StatefulWidget {
+  const _NewClientForm({required this.draft, required this.onChanged});
+
+  final NewClientDraft draft;
+  final ValueChanged<NewClientDraft> onChanged;
+
+  @override
+  State<_NewClientForm> createState() => _NewClientFormState();
+}
+
+class _NewClientFormState extends State<_NewClientForm> {
+  late NewClientDraft _draft = widget.draft;
+
+  void _update(NewClientDraft draft) {
+    setState(() => _draft = draft);
+    widget.onChanged(draft);
+  }
+
+  InputDecoration _decoration(String label, {String? hint}) => InputDecoration(
+    labelText: label,
+    hintText: hint,
+    border: const OutlineInputBorder(),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        ClientPhotoPicker(
+          name: _draft.name,
+          pendingPhotoPath: _draft.photoPath,
+          size: 96,
+          onPicked: (path) => _update(_draft.copyWith(photoPath: () => path)),
+          onRemoved: () => _update(_draft.copyWith(photoPath: () => null)),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          initialValue: _draft.name,
+          textCapitalization: TextCapitalization.words,
+          decoration: _decoration('Nombre completo *'),
+          onChanged: (v) => _update(_draft.copyWith(name: v)),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          initialValue: _draft.address,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: _decoration('Dirección / Ubicación *'),
+          onChanged: (v) => _update(_draft.copyWith(address: v)),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          initialValue: _draft.phone,
+          keyboardType: TextInputType.phone,
+          decoration: _decoration('Teléfono'),
+          onChanged: (v) => _update(_draft.copyWith(phone: v)),
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          validator: (_) => _draft.phoneValid ? null : 'Número no válido',
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          initialValue: _draft.dpi,
+          keyboardType: TextInputType.number,
+          decoration: _decoration('DPI / Documento'),
+          onChanged: (v) => _update(_draft.copyWith(dpi: v)),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          initialValue: _draft.alias,
+          textCapitalization: TextCapitalization.characters,
+          decoration: _decoration(
+            'Referencia / Alias',
+            hint: 'YOLI DE DON NERY',
+          ),
+          onChanged: (v) => _update(_draft.copyWith(alias: v)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Header of the digital card showing the basic data of the chosen client.
+class _ClientHeaderPreview extends StatelessWidget {
+  const _ClientHeaderPreview({required this.state, required this.color});
+
+  final CardCreationState state;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final isNew = state.mode == ClientMode.newClient;
+    final client = state.client;
+    final String name;
+    final String? alias;
+    final String? phone;
+    final String address;
+    if (isNew) {
+      name = state.draft.name.trim();
+      alias = state.draft.alias.trim();
+      phone = state.draft.phone.trim();
+      address = state.draft.address.trim();
+    } else {
+      name = client?.fullName ?? '';
+      alias = client?.alias;
+      phone = client?.primaryPhone;
+      address = client?.address ?? '';
+    }
+    final style = const TextStyle(color: Colors.white);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name.isEmpty ? 'Nombre del cliente' : name,
+            style: style.copyWith(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          if (alias != null && alias.isNotEmpty) Text(alias, style: style),
+          if (address.isNotEmpty) Text(address, style: style),
+          if (phone != null && phone.isNotEmpty)
+            Text('Tel. $phone', style: style),
+        ],
+      ),
     );
   }
 }

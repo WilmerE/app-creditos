@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/clientes/presentation/screens/client_list_screen.dart';
-import 'features/cobros_tarjetas/presentation/screens/card_creation_screen.dart';
+import 'features/cobros_tarjetas/presentation/screens/card_navigation.dart';
 
 class CreditosApp extends StatelessWidget {
   const CreditosApp({super.key});
@@ -30,14 +30,17 @@ class _HomeScreen extends StatelessWidget {
             const Text('Gestión de Créditos y Cobros'),
             const SizedBox(height: 16),
             FilledButton.icon(
+              onPressed: () => openCardCreation(context),
+              icon: const Icon(Icons.add_card),
+              label: const Text('Nueva tarjeta'),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.tonalIcon(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => ClientListScreen(
-                    onCreateCard: (client) => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CardCreationScreen(client: client),
-                      ),
-                    ),
+                    onCreateCard: (client) => createCardFor(context, client),
+                    onOpenCards: (client) => openClientCards(context, client),
                   ),
                 ),
               ),

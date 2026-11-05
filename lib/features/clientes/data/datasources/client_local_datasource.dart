@@ -12,6 +12,10 @@ class ClientLocalDataSource {
 
   $ClientsTableTable get _clients => _database.clientsTable;
   $ClientPhonesTable get _phones => _database.clientPhones;
+  $CardsTableTable get _cards => _database.cardsTable;
+
+  // Statuses counted as "active": Activa, Deudor and Renovación.
+  static const _openStatuses = ['active', 'debtor', 'renewal'];
 
   Stream<List<Client>> watchClients({String query = ''}) {
     return _buildQuery(query).watch().map(_groupRows);
@@ -24,6 +28,7 @@ class ClientLocalDataSource {
   Future<Client?> getById(String id) async {
     final query = _database.select(_clients).join([
       leftOuterJoin(_phones, _phones.clientId.equalsExp(_clients.id)),
+      _openCardsJoin(),
     ])..where(_clients.id.equals(id));
     final clients = _groupRows(await query.get());
     return clients.isEmpty ? null : clients.single;
@@ -72,6 +77,7 @@ class ClientLocalDataSource {
   JoinedSelectStatement<HasResultSet, dynamic> _buildQuery(String text) {
     final query = _database.select(_clients).join([
       leftOuterJoin(_phones, _phones.clientId.equalsExp(_clients.id)),
+      _openCardsJoin(),
     ])..where(_clients.deletedAt.isNull());
 
     final term = text.trim();
@@ -90,15 +96,27 @@ class ClientLocalDataSource {
     return query;
   }
 
+  Join _openCardsJoin() => leftOuterJoin(
+    _cards,
+    _cards.clientId.equalsExp(_clients.id) & _cards.status.isIn(_openStatuses),
+  );
+
   List<Client> _groupRows(List<TypedResult> rows) {
     final clients = <String, ClientRow>{};
     final phones = <String, List<String>>{};
+    final openCards = <String, Set<String>>{};
     for (final row in rows) {
       final client = row.readTable(_clients);
       clients.putIfAbsent(client.id, () => client);
       final phone = row.readTableOrNull(_phones);
       final list = phones.putIfAbsent(client.id, () => []);
-      if (phone != null) list.add(phone.phoneNumber);
+      if (phone != null && !list.contains(phone.phoneNumber)) {
+        list.add(phone.phoneNumber);
+      }
+      final card = row.readTableOrNull(_cards);
+      if (card != null) {
+        openCards.putIfAbsent(client.id, () => {}).add(card.id);
+      }
     }
 
     return clients.values
@@ -112,6 +130,7 @@ class ClientLocalDataSource {
             dpiFolder: row.dpiFolder,
             alias: row.alias,
             photoPath: row.photoPath,
+            activeCardsCount: openCards[row.id]?.length ?? 0,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           ),

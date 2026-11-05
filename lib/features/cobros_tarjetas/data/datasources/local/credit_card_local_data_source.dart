@@ -25,6 +25,35 @@ class CreditCardLocalDataSource {
     return balances;
   }
 
+  Future<Set<String>> clientIdsWithPendingBalance() async {
+    final cards = await _database.select(_database.cardsTable).get();
+    final ids = <String>{};
+    for (final row in cards) {
+      final card = _toEntity(row);
+      if (!card.status.isOpen || ids.contains(card.clientId)) continue;
+      if (card.totalToPay - await _totalPaid(card.id) > 0.005) {
+        ids.add(card.clientId);
+      }
+    }
+    return ids;
+  }
+
+  Future<CreditCard?> getCard(String cardId) async {
+    final row = await (_database.select(
+      _database.cardsTable,
+    )..where((c) => c.id.equals(cardId))).getSingleOrNull();
+    return row == null ? null : _toEntity(row);
+  }
+
+  Future<List<CreditCard>> cardsForClient(String clientId) async {
+    final rows =
+        await (_database.select(_database.cardsTable)
+              ..where((c) => c.clientId.equals(clientId))
+              ..orderBy([(c) => OrderingTerm.desc(c.createdAt)]))
+            .get();
+    return rows.map(_toEntity).toList(growable: false);
+  }
+
   Future<bool> hasPreviousCards(String clientId) async {
     final count = _database.cardsTable.id.count();
     final query = _database.selectOnly(_database.cardsTable)

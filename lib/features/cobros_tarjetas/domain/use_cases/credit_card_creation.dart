@@ -32,6 +32,10 @@ class CreditCardCreation {
     return balances.any((balance) => balance.pending > _epsilon);
   }
 
+  /// Ids of the clients that still owe money on an open card.
+  Future<Set<String>> blockedClientIds() =>
+      _repository.clientIdsWithPendingBalance();
+
   Future<void> ensureCanRenew(String clientId) async {
     if (await isRenewalBlocked(clientId)) throw const RenewalBlockedException();
   }
