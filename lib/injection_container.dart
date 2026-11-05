@@ -2,6 +2,7 @@ import 'package:injectable/injectable.dart';
 import 'package:get_it/get_it.dart';
 
 import 'core/database/app_database.dart';
+import 'features/cobros_tarjetas/data/datasources/local/payment_local_data_source.dart';
 import 'injection_container.config.dart';
 
 final getIt = GetIt.instance;
@@ -19,4 +20,9 @@ Future<void> configureDependencies() async {
 abstract class AppModule {
   @lazySingleton
   AppDatabase get database => AppDatabase();
+
+  @lazySingleton
+  PaymentLocalDataSource paymentLocalDataSource(AppDatabase database) {
+    return PaymentLocalDataSource(database);
+  }
 }
