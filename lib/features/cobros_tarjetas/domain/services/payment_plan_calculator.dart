@@ -77,13 +77,13 @@ abstract final class PaymentPlanCalculator {
 
   static bool isSupported(double amount) => optionsFor(amount).isNotEmpty;
 
-  /// Builds the schedule: the first collection is the Saturday of the week
-  /// starting on [startDate] (next Monday by default), then weekly.
+  /// Builds a weekly schedule, defaulting to next Monday and its Saturday.
   static PaymentPlan calculate({
     required double requestedAmount,
     required String cardId,
     PlanOption? option,
     DateTime? startDate,
+    DateTime? firstPaymentDate,
     DateTime? now,
     String Function()? idGenerator,
     bool isRenewal = false,
@@ -102,8 +102,20 @@ abstract final class PaymentPlanCalculator {
     }
 
     final start = startDate != null
-        ? DateHelpers.mondayOf(startDate)
+        ? DateTime(startDate.year, startDate.month, startDate.day)
         : DateHelpers.nextMonday(now ?? DateTime.now());
+    final first = firstPaymentDate != null
+        ? DateTime(
+            firstPaymentDate.year,
+            firstPaymentDate.month,
+            firstPaymentDate.day,
+          )
+        : DateTime(start.year, start.month, start.day + 5);
+    if (first.isBefore(start)) {
+      throw const InvalidPlanAmountException(
+        'La fecha del primer pago no puede ser anterior al inicio del crédito.',
+      );
+    }
     final newId = idGenerator ?? () => const Uuid().v4();
 
     final installments = [
@@ -111,11 +123,7 @@ abstract final class PaymentPlanCalculator {
         PaymentInstallment(
           id: newId(),
           cardId: cardId,
-          scheduledDate: DateTime(
-            start.year,
-            start.month,
-            start.day + DateTime.saturday - DateTime.monday + 7 * i,
-          ),
+          scheduledDate: DateTime(first.year, first.month, first.day + 7 * i),
           amountPaid: 0,
           balanceAfter: selected.total,
           isRenewal: isRenewal,

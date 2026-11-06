@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -83,6 +83,28 @@ void main() {
       expect(p.projectedBalance(5), 0);
     });
 
+    test('preserves custom dates and repeats weekly across months', () {
+      final result = PaymentPlanCalculator.calculate(
+        requestedAmount: 500,
+        cardId: 'x',
+        startDate: DateTime(2024, 2, 27, 15),
+        firstPaymentDate: DateTime(2024, 2, 29, 10),
+      );
+      expect(result.startDate, DateTime(2024, 2, 27));
+      expect(result.installments.first.scheduledDate, DateTime(2024, 2, 29));
+      expect(result.installments[1].scheduledDate, DateTime(2024, 3, 7));
+      expect(result.installments.last.scheduledDate, DateTime(2024, 4, 4));
+      expect(
+        () => PaymentPlanCalculator.calculate(
+          requestedAmount: 500,
+          cardId: 'x',
+          startDate: DateTime(2024, 3, 1),
+          firstPaymentDate: DateTime(2024, 2, 29),
+        ),
+        throwsA(isA<InvalidPlanAmountException>()),
+      );
+    });
+
     test('rejects amounts without a plan', () {
       expect(() => plan(700), throwsA(isA<InvalidPlanAmountException>()));
       expect(PaymentPlanCalculator.isSupported(2600), isFalse);
@@ -119,6 +141,20 @@ void main() {
       expect(balances.single.card.status, CardStatus.active);
       expect(balances.single.pending, 750);
       expect(await db.select(db.payments).get(), hasLength(6));
+    });
+
+    test('persists exact custom dates for an existing client', () async {
+      final id = await creation(
+        clientId: 'c1',
+        requestedAmount: 500,
+        colorHex: '#1565C0',
+        startDate: DateTime(2024, 2, 27),
+        firstPaymentDate: DateTime(2024, 2, 29),
+      );
+      expect((await repo.getCard(id))!.startDate, DateTime(2024, 2, 27));
+      final rows = await repo.watchInstallments(id).first;
+      expect(rows.first.scheduledDate, DateTime(2024, 2, 29));
+      expect(rows[1].scheduledDate, DateTime(2024, 3, 7));
     });
 
     test('blocks renewal while the previous card has a balance', () async {
@@ -177,6 +213,32 @@ void main() {
         ),
       ),
     );
+    expect(find.text('Fecha de Inicio del Crédito'), findsOneWidget);
+    expect(find.text('Fecha del Primer Día de Pago'), findsOneWidget);
+    final selectedDay = cubit.state.startDate!.day == 1 ? 2 : 1;
+    await tester.tap(find.text('Fecha de Inicio del Crédito'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DatePickerDialog), findsOneWidget);
+    await tester.tap(find.text('$selectedDay').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(cubit.state.startDate!.day, selectedDay);
+    cubit.selectFirstPaymentDate(
+      DateTime(
+        cubit.state.startDate!.year,
+        cubit.state.startDate!.month,
+        1,
+      ).subtract(const Duration(days: 1)),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(cubit.state.datesValid, isFalse);
+    expect(
+      find.text('El primer pago no puede ser anterior al inicio del crédito.'),
+      findsOneWidget,
+    );
+    cubit.selectFirstPaymentDate(cubit.state.startDate!);
+    await tester.pump();
     await tester.tap(find.text(CurrencyFormatter.formatGtq(1000)));
     await tester.pump();
     expect(find.text('FECHA'), findsOneWidget);
@@ -211,7 +273,9 @@ void main() {
 
     cubit
       ..setMode(ClientMode.newClient)
-      ..selectAmount(500);
+      ..selectAmount(500)
+      ..selectStartDate(DateTime(2024, 2, 27))
+      ..selectFirstPaymentDate(DateTime(2024, 2, 29));
     expect(cubit.state.canSubmit, isFalse);
     cubit.updateDraft(const NewClientDraft(name: 'Luis', address: 'Zona 3'));
     expect(cubit.state.canSubmit, isTrue);
@@ -225,6 +289,13 @@ void main() {
       hasLength(1),
     );
     expect(await creation.blockedClientIds(), {created.single.id});
+    final card = (await db.select(db.cardsTable).get()).single;
+    final installments = await (db.select(
+      db.payments,
+    )..orderBy([(p) => OrderingTerm.asc(p.scheduledDate)])).get();
+    expect(card.startDate, DateTime(2024, 2, 27));
+    expect(installments.first.scheduledDate, DateTime(2024, 2, 29));
+    expect(installments[1].scheduledDate, DateTime(2024, 3, 7));
 
     // A failing card creation rolls the client back.
     final failing = CreateCardWithNewClient(

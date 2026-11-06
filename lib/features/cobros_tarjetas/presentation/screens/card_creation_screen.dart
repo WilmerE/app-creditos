@@ -62,6 +62,19 @@ class CardCreationViewState extends State<CardCreationView> {
     context.read<CardCreationCubit>().selectAmount(amount);
   }
 
+  Future<void> _pickDate(
+    DateTime initial,
+    ValueChanged<DateTime> onSelected,
+  ) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100, 12, 31),
+    );
+    if (date != null && mounted) onSelected(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<CardCreationCubit, CardCreationState>(
@@ -225,6 +238,35 @@ class CardCreationViewState extends State<CardCreationView> {
                                 cubit.selectOption(s.first),
                           ),
                         ],
+                        const SizedBox(height: 24),
+                        ListTile(
+                          title: const Text('Fecha de Inicio del Crédito'),
+                          subtitle: Text(
+                            DateFormat('dd/MM/yyyy').format(state.startDate!),
+                          ),
+                          trailing: const Icon(Icons.calendar_today),
+                          onTap: () => _pickDate(
+                            state.startDate!,
+                            cubit.selectStartDate,
+                          ),
+                        ),
+                        ListTile(
+                          title: const Text('Fecha del Primer Día de Pago'),
+                          subtitle: Text(
+                            DateFormat('dd/MM/yyyy')
+                                .format(state.firstPaymentDate!),
+                          ),
+                          trailing: const Icon(Icons.calendar_today),
+                          onTap: () => _pickDate(
+                            state.firstPaymentDate!,
+                            cubit.selectFirstPaymentDate,
+                          ),
+                        ),
+                        if (!state.datesValid)
+                          Text(
+                            'El primer pago no puede ser anterior al inicio del crédito.',
+                            style: TextStyle(color: theme.colorScheme.error),
+                          ),
                         const SizedBox(height: 24),
                         Text(
                           'Color del historial',

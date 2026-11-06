@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/utils/date_helpers.dart';
 import '../../../clientes/domain/entities/client.dart';
 import '../../../clientes/domain/repositories/client_repository.dart';
 import '../../domain/services/payment_plan_calculator.dart';
@@ -76,6 +77,8 @@ class CardCreationState extends Equatable {
     this.amount,
     this.option,
     this.plan,
+    this.startDate,
+    this.firstPaymentDate,
     this.colorHex = defaultColorHex,
     this.renewalBlocked = false,
     this.errorMessage,
@@ -95,6 +98,8 @@ class CardCreationState extends Equatable {
   final double? amount;
   final PlanOption? option;
   final PaymentPlan? plan;
+  final DateTime? startDate;
+  final DateTime? firstPaymentDate;
   final String colorHex;
   final bool renewalBlocked;
   final String? errorMessage;
@@ -131,7 +136,15 @@ class CardCreationState extends Equatable {
       : client != null && !renewalBlocked;
 
   bool get canSubmit =>
-      hasValidClient && plan != null && status != CardCreationStatus.saving;
+      hasValidClient &&
+      plan != null &&
+      datesValid &&
+      status != CardCreationStatus.saving;
+
+  bool get datesValid =>
+      startDate != null &&
+      firstPaymentDate != null &&
+      !firstPaymentDate!.isBefore(startDate!);
 
   CardCreationState copyWith({
     CardCreationStatus? status,
@@ -146,6 +159,8 @@ class CardCreationState extends Equatable {
     double? Function()? amount,
     PlanOption? Function()? option,
     PaymentPlan? Function()? plan,
+    DateTime? startDate,
+    DateTime? firstPaymentDate,
     String? colorHex,
     bool? renewalBlocked,
     String? Function()? errorMessage,
@@ -163,6 +178,8 @@ class CardCreationState extends Equatable {
       amount: amount != null ? amount() : this.amount,
       option: option != null ? option() : this.option,
       plan: plan != null ? plan() : this.plan,
+      startDate: startDate ?? this.startDate,
+      firstPaymentDate: firstPaymentDate ?? this.firstPaymentDate,
       colorHex: colorHex ?? this.colorHex,
       renewalBlocked: renewalBlocked ?? this.renewalBlocked,
       errorMessage: errorMessage != null ? errorMessage() : this.errorMessage,
@@ -183,6 +200,8 @@ class CardCreationState extends Equatable {
     amount,
     option,
     plan,
+    startDate,
+    firstPaymentDate,
     colorHex,
     renewalBlocked,
     errorMessage,
@@ -193,7 +212,15 @@ class CardCreationState extends Equatable {
 @injectable
 class CardCreationCubit extends Cubit<CardCreationState> {
   CardCreationCubit(this._clients, this._creation, this._creationWithClient)
-    : super(const CardCreationState());
+    : super(_initialState());
+
+  static CardCreationState _initialState() {
+    final start = DateHelpers.nextMonday(DateTime.now());
+    return CardCreationState(
+      startDate: start,
+      firstPaymentDate: DateTime(start.year, start.month, start.day + 5),
+    );
+  }
 
   final ClientRepository _clients;
   final CreditCardCreation _creation;
@@ -298,6 +325,25 @@ class CardCreationCubit extends Cubit<CardCreationState> {
 
   void selectColor(String colorHex) => emit(state.copyWith(colorHex: colorHex));
 
+  void selectStartDate(DateTime date) => _selectDates(
+    DateTime(date.year, date.month, date.day),
+    state.firstPaymentDate!,
+  );
+
+  void selectFirstPaymentDate(DateTime date) =>
+      _selectDates(state.startDate!, DateTime(date.year, date.month, date.day));
+
+  void _selectDates(DateTime start, DateTime first) {
+    emit(
+      state.copyWith(
+        startDate: start,
+        firstPaymentDate: first,
+        plan: () =>
+            _preview(state.amount, state.option, start: start, first: first),
+      ),
+    );
+  }
+
   Future<void> submit() async {
     final amount = state.amount;
     if (!state.canSubmit || amount == null) return;
@@ -330,6 +376,8 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           requestedAmount: amount,
           colorHex: state.colorHex,
           option: state.option,
+          startDate: state.startDate,
+          firstPaymentDate: state.firstPaymentDate,
         );
       } else {
         id = await _creation(
@@ -337,6 +385,8 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           requestedAmount: amount,
           colorHex: state.colorHex,
           option: state.option,
+          startDate: state.startDate,
+          firstPaymentDate: state.firstPaymentDate,
         );
       }
       emit(
@@ -360,12 +410,22 @@ class CardCreationCubit extends Cubit<CardCreationState> {
     }
   }
 
-  PaymentPlan? _preview(double? amount, PlanOption? option) {
+  PaymentPlan? _preview(
+    double? amount,
+    PlanOption? option, {
+    DateTime? start,
+    DateTime? first,
+  }) {
     if (amount == null || option == null) return null;
+    start ??= state.startDate!;
+    first ??= state.firstPaymentDate!;
+    if (first.isBefore(start)) return null;
     return PaymentPlanCalculator.calculate(
       requestedAmount: amount,
       cardId: 'preview',
       option: option,
+      startDate: start,
+      firstPaymentDate: first,
     );
   }
 }

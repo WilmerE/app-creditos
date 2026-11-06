@@ -5,6 +5,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../injection_container.dart';
+import '../../../../core/database/app_database.dart';
+import '../../../enterprise/data/enterprise_config_repository.dart';
+import '../../../enterprise/domain/enterprise_config.dart';
 import '../../domain/entities/credit_card.dart';
 import '../bloc/card_detail_cubit.dart';
 import '../widgets/tarjeta_digital_widget.dart';
@@ -19,13 +22,35 @@ class CardDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => getIt<CardDetailCubit>()..load(cardId),
-      child: const CardDetailView(),
+      child: StreamBuilder<EnterpriseConfig>(
+        stream: EnterpriseConfigRepository(getIt<AppDatabase>()).watch(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Scaffold(
+              body: Center(
+                child: Text('No se pudo cargar la configuración empresarial.'),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return CardDetailView(enterpriseConfig: snapshot.data!);
+        },
+      ),
     );
   }
 }
 
 class CardDetailView extends StatelessWidget {
-  const CardDetailView({super.key});
+  const CardDetailView({
+    super.key,
+    this.enterpriseConfig = const EnterpriseConfig(),
+  });
+
+  final EnterpriseConfig enterpriseConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +98,8 @@ class CardDetailView extends StatelessWidget {
                   photo: _photoOf(client.photoPath),
                 ),
                 initialBalance: card.totalToPay,
+                weeklyAmount: card.weeklyAmount,
+                enterpriseConfig: enterpriseConfig,
                 payments: state.installments,
                 renewalColor: colorFromHex(card.colorHex)
                     .withValues(alpha: 0.18),

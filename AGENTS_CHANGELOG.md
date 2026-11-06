@@ -54,3 +54,25 @@
 - **Módulo modificado:** `features/cobros_tarjetas` (cubit, pantalla, use cases, repositorio) y `core/database/transaction_runner.dart`.
 - **Cambios realizados:** `CardCreationScreen` con selector Cliente Existente / Cliente Nuevo. Existente: buscador + filtro (Todos / Sin tarjeta activa / Con tarjeta activa) con candado Q0.00. Nuevo: formulario rápido y `CreateCardWithNewClient` crea cliente y tarjeta en una sola transacción Drift. Devuelve `cardId` al cerrar.
 - **Pendientes:** Abrir `CardCreationScreen()` sin cliente desde el home (hoy `createCardFor` siempre pasa un cliente).
+
+## [Tarjetas y configuración empresarial] - 2026-11-05
+- **Módulos modificados:** `features/cobros_tarjetas`, `features/enterprise` y `core/database`.
+- **Cambios realizados:** Tabla única de pagos con marca de cuota saldada; fechas de inicio y primer pago configurables; encabezado empresarial editable con campos opcionales persistidos localmente.
+- **Pendientes:** Ninguno.
+
+## [Datos de prueba / Drift] - 2026-11-05
+- **Módulos modificados:** `core/database` y pantalla de inicio.
+- **Cambios realizados:** `DatabaseSeed` inserta transaccionalmente 80 clientes ficticios y 200 tarjetas con cuotas; acceso manual solo en depuración, con confirmación y protección de datos existentes.
+- **Pendientes:** Ninguno.
+- **Contexto técnico:** Migración de esquema v5→v6; ejecutar `dart run build_runner build` tras actualizar. El saldo mostrado es el saldo total del crédito, por lo que la marca utiliza la cuota semanal o la liquidación del crédito.
+
+## [Tarjetas / encabezado empresarial] - 2026-11-05
+- **Módulo modificado:** `features/cobros_tarjetas/presentation/widgets`.
+- **Cambios realizados:** Cuenta bancaria resaltada con fondo tenue, bordes redondeados y texto en negrita; separación visual entre datos empresariales y del cliente.
+- **Pendientes:** Ninguno.
+
+## [Dashboard de cobros] - 2026-11-05
+- **Módulos modificados:** `features/dashboard` y pantalla de inicio.
+- **Cambios realizados:** Panel reactivo Drift con filtros por estado, caja estimada, navegación a tarjeta y cambios de estado validados transaccionalmente.
+- **Pendientes:** Para una caja exacta se necesita un historial de movimientos de abono con fecha e importe.
+- **Contexto técnico:** Los estados existentes son manuales; la cifra abonada diaria se aproxima a partir de las últimas ediciones, no es un dato contable.

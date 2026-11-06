@@ -62,8 +62,32 @@ class CardsTable extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+@DataClassName('EnterpriseConfigRow')
+class EnterpriseConfigs extends Table {
+  IntColumn get id => integer()();
+  TextColumn get name => text()();
+  TextColumn get phone => text()();
+  TextColumn get nit => text()();
+  TextColumn get email => text()();
+  TextColumn get bankAccount => text()();
+  BoolColumn get showPhone => boolean()();
+  BoolColumn get showNit => boolean()();
+  BoolColumn get showEmail => boolean()();
+  BoolColumn get showBankAccount => boolean()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DriftDatabase(
-  tables: [SyncMetadata, Payments, ClientsTable, ClientPhones, CardsTable],
+  tables: [
+    SyncMetadata,
+    Payments,
+    ClientsTable,
+    ClientPhones,
+    CardsTable,
+    EnterpriseConfigs,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -71,7 +95,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -102,6 +126,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 5) {
         await migrator.createTable(cardsTable);
+      }
+      if (from < 6) {
+        await migrator.createTable(enterpriseConfigs);
       }
     },
   );

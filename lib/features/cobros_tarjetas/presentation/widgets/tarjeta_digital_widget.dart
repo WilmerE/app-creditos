@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../enterprise/domain/enterprise_config.dart';
 import '../../domain/entities/payment_installment.dart';
 
 const Color _wineColor = Color(0xFF800020);
@@ -57,6 +58,8 @@ class TarjetaDigitalWidget extends StatefulWidget {
     required this.initialBalance,
     required this.payments,
     required this.onAutoSave,
+    this.weeklyAmount,
+    this.enterpriseConfig = const EnterpriseConfig(),
     this.renewalColor = const Color(0xFFFFF1D6),
     this.debounceDuration = const Duration(milliseconds: 500),
     super.key,
@@ -66,6 +69,8 @@ class TarjetaDigitalWidget extends StatefulWidget {
   final double initialBalance;
   final List<PaymentInstallment> payments;
   final Future<void> Function(List<PaymentInstallment> payments) onAutoSave;
+  final double? weeklyAmount;
+  final EnterpriseConfig enterpriseConfig;
   final Color renewalColor;
   final Duration debounceDuration;
 
@@ -75,6 +80,8 @@ class TarjetaDigitalWidget extends StatefulWidget {
 
 class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
   late List<PaymentInstallment> _payments;
+  final Map<String, int> _unconfirmedPayments = {};
+  int _saveRevision = 0;
 
   @override
   void initState() {
@@ -122,6 +129,9 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     }
     if (changedPayments.isEmpty) return;
 
+    final revision = ++_saveRevision;
+    setState(() => _unconfirmedPayments[changedPayment.id] = revision);
+
     if (changedPayment.type != PaymentType.cash &&
         (changedPayment.receiptNumber == null ||
             changedPayment.receiptNumber!.trim().isEmpty)) {
@@ -137,6 +147,9 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
 
     try {
       await widget.onAutoSave(changedPayments);
+      if (mounted && _unconfirmedPayments[changedPayment.id] == revision) {
+        setState(() => _unconfirmedPayments.remove(changedPayment.id));
+      }
     } catch (error) {
       if (!mounted) rethrow;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -182,9 +195,13 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _CardHeader(customer: widget.customer, metrics: metrics),
+                    _CardHeader(
+                      customer: widget.customer,
+                      metrics: metrics,
+                      enterprise: widget.enterpriseConfig,
+                    ),
                     const SizedBox(height: 16),
-                    _buildPaymentGrid(metrics),
+                    _buildPaymentTable(metrics),
                     const SizedBox(height: 12),
                     Text(
                       _latePaymentNote,
@@ -204,28 +221,7 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     );
   }
 
-  Widget _buildPaymentGrid(_CardMetrics metrics) {
-    if (metrics.compact) {
-      return _buildPaymentTable(_payments, 0, metrics);
-    }
-    final splitAt = (_payments.length / 2).ceil();
-    final left = _payments.take(splitAt).toList(growable: false);
-    final right = _payments.skip(splitAt).toList(growable: false);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _buildPaymentTable(left, 0, metrics)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildPaymentTable(right, splitAt, metrics)),
-      ],
-    );
-  }
-
-  Widget _buildPaymentTable(
-    List<PaymentInstallment> payments,
-    int offset,
-    _CardMetrics metrics,
-  ) {
+  Widget _buildPaymentTable(_CardMetrics metrics) {
     return Table(
       columnWidths: {
         0: const FlexColumnWidth(1.2),
@@ -257,8 +253,8 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
               )
               .toList(growable: false),
         ),
-        for (var index = 0; index < payments.length; index++)
-          _paymentRow(payments[index], offset + index, metrics),
+        for (var index = 0; index < _payments.length; index++)
+          _paymentRow(_payments[index], index, metrics),
       ],
     );
   }
@@ -271,6 +267,12 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     final previousBalance = index == 0
         ? widget.initialBalance
         : _payments[index - 1].balanceAfter;
+    final settled =
+        !_unconfirmedPayments.containsKey(payment.id) &&
+        payment.amountPaid > 0 &&
+        (payment.balanceAfter <= 0 ||
+            (widget.weeklyAmount != null &&
+                payment.amountPaid >= widget.weeklyAmount!));
     return TableRow(
       decoration: BoxDecoration(
         color: payment.isRenewal ? widget.renewalColor : Colors.transparent,
@@ -296,13 +298,29 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            CurrencyFormatter.formatGtq(payment.balanceAfter),
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: metrics.cellFont,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Flexible(
+                child: Text(
+                  CurrencyFormatter.formatGtq(payment.balanceAfter),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: metrics.cellFont,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (settled) ...[
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                  size: 18,
+                  semanticLabel: 'Cuota saldada',
+                ),
+              ],
+            ],
           ),
         ),
       ],
@@ -311,10 +329,15 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
 }
 
 class _CardHeader extends StatelessWidget {
-  const _CardHeader({required this.customer, required this.metrics});
+  const _CardHeader({
+    required this.customer,
+    required this.metrics,
+    required this.enterprise,
+  });
 
   final TarjetaCustomerInfo customer;
   final _CardMetrics metrics;
+  final EnterpriseConfig enterprise;
 
   @override
   Widget build(BuildContext context) {
@@ -331,7 +354,7 @@ class _CardHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'V&\$ INVERSIONES',
+          enterprise.name,
           style: TextStyle(
             color: _wineColor,
             fontSize: metrics.compact ? 18 : 21,
@@ -339,6 +362,39 @@ class _CardHeader extends StatelessWidget {
             letterSpacing: 0.7,
           ),
         ),
+        if (enterprise.showPhone && enterprise.phone.trim().isNotEmpty)
+          _HeaderField(
+            label: 'Teléfono empresa',
+            value: enterprise.phone,
+            metrics: metrics,
+          ),
+        if (enterprise.showNit && enterprise.nit.trim().isNotEmpty)
+          _HeaderField(label: 'NIT', value: enterprise.nit, metrics: metrics),
+        if (enterprise.showEmail && enterprise.email.trim().isNotEmpty)
+          _HeaderField(
+            label: 'Correo',
+            value: enterprise.email,
+            metrics: metrics,
+          ),
+        if (enterprise.showBankAccount &&
+            enterprise.bankAccount.trim().isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: _wineColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'Cuenta bancaria: ${enterprise.bankAccount}',
+              style: TextStyle(
+                fontSize: metrics.smallFont + 1,
+                fontWeight: FontWeight.bold,
+                color: _wineColor,
+              ),
+            ),
+          ),
+        const SizedBox(height: 8),
         Text('Inicio: ${dateFormat.format(customer.startDate)}'),
         const SizedBox(height: 6),
         _HeaderField(label: 'Nombre', value: customer.name, metrics: metrics),

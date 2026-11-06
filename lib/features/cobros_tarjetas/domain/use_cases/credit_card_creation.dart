@@ -47,6 +47,7 @@ class CreditCardCreation {
     required String colorHex,
     PlanOption? option,
     DateTime? startDate,
+    DateTime? firstPaymentDate,
     DateTime? now,
   }) async {
     await ensureCanRenew(clientId);
@@ -58,6 +59,7 @@ class CreditCardCreation {
       cardId: cardId,
       option: option,
       startDate: startDate,
+      firstPaymentDate: firstPaymentDate,
       now: now,
       isRenewal: isRenewal,
     );

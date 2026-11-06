@@ -23,6 +23,8 @@ class CreateCardWithNewClient {
     required double requestedAmount,
     required String colorHex,
     PlanOption? option,
+    DateTime? startDate,
+    DateTime? firstPaymentDate,
   }) {
     return _tx.run(() async {
       await _clients.save(client, newPhotoSourcePath: photoSourcePath);
@@ -31,6 +33,8 @@ class CreateCardWithNewClient {
         requestedAmount: requestedAmount,
         colorHex: colorHex,
         option: option,
+        startDate: startDate,
+        firstPaymentDate: firstPaymentDate,
       );
     });
   }
