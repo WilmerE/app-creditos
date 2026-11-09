@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../cobros_tarjetas/domain/entities/credit_card.dart';
 import '../../cobros_tarjetas/data/datasources/local/mora_local_data_source.dart';
+import 'operational_notifications_local_data_source.dart';
 import '../domain/dashboard_repository.dart';
 
 class DriftDashboardRepository implements DashboardRepository {
@@ -18,6 +19,67 @@ class DriftDashboardRepository implements DashboardRepository {
       for (final card in all) {
         if (CardStatus.values.byName(card.status).isOpen) {
           await MoraLocalDataSource(_db).accrue(card.id);
+        }
+        final paymentsForCard = await (_db.select(
+          _db.payments,
+        )..where((payment) => payment.cardId.equals(card.id))).get();
+        final paid = paymentsForCard.fold<double>(
+          0,
+          (sum, payment) => sum + payment.amountPaid - payment.moraCents / 100,
+        );
+        final today = DateTime.now();
+        final hasOverdue = paymentsForCard.any((payment) {
+          final scheduled = payment.scheduledDate?.toLocal();
+          if (payment.isManual || scheduled == null) return false;
+          return DateTime(
+                scheduled.year,
+                scheduled.month,
+                scheduled.day,
+              ).isBefore(DateTime(today.year, today.month, today.day)) &&
+              payment.amountPaid - payment.moraCents / 100 <
+                  card.weeklyAmount - _epsilon;
+        });
+        final pendingMora = await MoraLocalDataSource(_db).pending(card.id);
+        final fee =
+            pendingMora.length * await MoraLocalDataSource(_db).dailyRate();
+        final balance =
+            (card.totalInstallments * card.weeklyAmount - paid).clamp(
+              0,
+              double.infinity,
+            ) +
+            fee;
+        final storedStatus = CardStatus.values.byName(card.status);
+        final actualStatus = storedStatus.forBalance(
+          pendingBalance: balance.toDouble(),
+          hasOverdueInstallment: hasOverdue,
+        );
+        if (actualStatus != storedStatus) {
+          await (_db.update(_db.cardsTable)
+                ..where((row) => row.id.equals(card.id)))
+              .write(CardsTableCompanion(status: Value(actualStatus.name)));
+          final client = await (_db.select(
+            _db.clientsTable,
+          )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
+          if (actualStatus == CardStatus.debtor ||
+              actualStatus == CardStatus.renewal) {
+            await OperationalNotificationsLocalDataSource(_db).add(
+              eventKey: actualStatus == CardStatus.debtor
+                  ? 'debtor:${card.id}:${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}'
+                  : 'renewal_ready:${card.id}',
+              type: actualStatus == CardStatus.debtor
+                  ? 'debtor'
+                  : 'renewal_ready',
+              cardId: card.id,
+              folderId: card.folderId,
+              title: actualStatus == CardStatus.debtor
+                  ? 'Tarjeta pasó a Deudor'
+                  : 'Tarjeta lista para renovación',
+              message: actualStatus == CardStatus.debtor
+                  ? '${client?.fullName ?? 'El cliente'} tiene una cuota vencida sin liquidar.'
+                  : '${client?.fullName ?? 'El cliente'} liquidó el capital y puede iniciar el flujo de renovación.',
+              createdAt: today,
+            );
+          }
         }
       }
     });
@@ -140,6 +202,7 @@ class DriftDashboardRepository implements DashboardRepository {
               totalInstallments: card.totalInstallments,
               payments: List.unmodifiable(installments),
               outstandingMora: moraAmount.toDouble(),
+              overdueDays: overdueDays.length,
             );
           })
           .toList(growable: false);
@@ -262,6 +325,43 @@ class DriftDashboardRepository implements DashboardRepository {
       await (_db.update(cards)..where((c) => c.id.equals(cardId))).write(
         CardsTableCompanion(status: Value(status.name)),
       );
+      if (status == CardStatus.paid ||
+          status == CardStatus.debtor ||
+          status == CardStatus.renewal) {
+        final client = await (_db.select(
+          _db.clientsTable,
+        )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
+        final todayKey =
+            '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+        await OperationalNotificationsLocalDataSource(_db).add(
+          eventKey: switch (status) {
+            CardStatus.paid => 'paid:$cardId',
+            CardStatus.debtor => 'debtor:$cardId:$todayKey',
+            _ => 'renewal_ready:$cardId',
+          },
+          type: switch (status) {
+            CardStatus.paid => 'card_paid',
+            CardStatus.debtor => 'debtor',
+            _ => 'renewal_ready',
+          },
+          cardId: cardId,
+          folderId: card.folderId,
+          title: switch (status) {
+            CardStatus.paid => 'Tarjeta liquidada',
+            CardStatus.debtor => 'Tarjeta pasó a Deudor',
+            _ => 'Tarjeta lista para renovación',
+          },
+          message: switch (status) {
+            CardStatus.paid =>
+              'La tarjeta de ${client?.fullName ?? 'el cliente'} pasó a pagada.',
+            CardStatus.debtor =>
+              '${client?.fullName ?? 'El cliente'} tiene una cuota vencida sin liquidar.',
+            _ =>
+              '${client?.fullName ?? 'El cliente'} liquidó el capital y puede iniciar el flujo de renovación.',
+          },
+          createdAt: now,
+        );
+      }
     });
   }
 }

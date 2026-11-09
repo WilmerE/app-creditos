@@ -10,6 +10,9 @@ class EnterpriseConfig {
     this.showEmail = false,
     this.showBankAccount = false,
     this.mora = 20,
+    this.collectionDeadlineHour = 18,
+    this.collectionDeadlineMinute = 0,
+    this.collectionReminderMinutes = 60,
   });
 
   final String name;
@@ -22,4 +25,7 @@ class EnterpriseConfig {
   final bool showEmail;
   final bool showBankAccount;
   final int mora;
+  final int collectionDeadlineHour;
+  final int collectionDeadlineMinute;
+  final int collectionReminderMinutes;
 }

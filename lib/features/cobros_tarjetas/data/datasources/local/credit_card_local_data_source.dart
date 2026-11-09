@@ -6,6 +6,7 @@ import '../../../domain/entities/credit_card.dart';
 import '../../../domain/entities/payment_installment.dart';
 import '../../../domain/use_cases/credit_card_creation.dart';
 import 'mora_local_data_source.dart';
+import '../../../../dashboard/data/operational_notifications_local_data_source.dart';
 
 @lazySingleton
 class CreditCardLocalDataSource {
@@ -100,9 +101,25 @@ class CreditCardLocalDataSource {
         throw const RenewalBlockedException();
       }
       for (final balance in balances.where((b) => b.pending <= 0.005)) {
+        final previousRow = previousCards.firstWhere(
+          (row) => row.id == balance.card.id,
+        );
+        final client = await (_database.select(
+          _database.clientsTable,
+        )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
         await (_database.update(cards)
               ..where((c) => c.id.equals(balance.card.id)))
             .write(CardsTableCompanion(status: Value(CardStatus.paid.name)));
+        await OperationalNotificationsLocalDataSource(_database).add(
+          eventKey: 'paid:${balance.card.id}',
+          type: 'card_paid',
+          cardId: balance.card.id,
+          folderId: previousRow.folderId,
+          title: 'Tarjeta liquidada',
+          message:
+              'La tarjeta de ${client?.fullName ?? 'el cliente'} pasó de renovación a pagada al emitirse la nueva tarjeta.',
+          createdAt: DateTime.now(),
+        );
       }
 
       await _database

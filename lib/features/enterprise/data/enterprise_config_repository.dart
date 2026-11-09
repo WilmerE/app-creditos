@@ -25,6 +25,9 @@ class EnterpriseConfigRepository {
                 showEmail: row.showEmail,
                 showBankAccount: row.showBankAccount,
                 mora: row.mora,
+                collectionDeadlineHour: row.collectionDeadlineHour,
+                collectionDeadlineMinute: row.collectionDeadlineMinute,
+                collectionReminderMinutes: row.collectionReminderMinutes,
               ),
       );
 
@@ -35,6 +38,14 @@ class EnterpriseConfigRepository {
         'mora',
         'Debe ser mayor que cero.',
       );
+    }
+    if (config.collectionDeadlineHour < 0 ||
+        config.collectionDeadlineHour > 23 ||
+        config.collectionDeadlineMinute < 0 ||
+        config.collectionDeadlineMinute > 59 ||
+        config.collectionReminderMinutes < 1 ||
+        config.collectionReminderMinutes > 720) {
+      throw ArgumentError('Revise el límite diario y el tiempo de aviso.');
     }
     return _database
         .into(_database.enterpriseConfigs)
@@ -51,6 +62,9 @@ class EnterpriseConfigRepository {
             showEmail: config.showEmail,
             showBankAccount: config.showBankAccount,
             mora: Value(config.mora),
+            collectionDeadlineHour: Value(config.collectionDeadlineHour),
+            collectionDeadlineMinute: Value(config.collectionDeadlineMinute),
+            collectionReminderMinutes: Value(config.collectionReminderMinutes),
           ),
         );
   }

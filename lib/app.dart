@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'core/database/app_database.dart';
 import 'core/database/database_seed.dart';
 import 'core/theme/app_theme.dart';
+import 'core/notifications/local_system_notification_service.dart';
 import 'features/clientes/presentation/screens/client_list_screen.dart';
 import 'features/cobros_tarjetas/presentation/screens/card_navigation.dart';
 import 'features/dashboard/presentation/screens/dashboard_screen.dart';
@@ -32,6 +33,14 @@ class _HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<_HomeScreen> {
   bool _seeding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LocalSystemNotificationService.instance.requestAndroidPermission();
+    });
+  }
 
   Future<void> _seed() async {
     final confirmed = await showDialog<bool>(

@@ -5,6 +5,7 @@ import '../../../../../core/database/app_database.dart';
 import '../../../domain/entities/credit_card.dart';
 import '../../../domain/entities/payment_installment.dart';
 import 'mora_local_data_source.dart';
+import '../../../../dashboard/data/operational_notifications_local_data_source.dart';
 
 class PaymentLocalDataSource {
   const PaymentLocalDataSource(this._database);
@@ -81,8 +82,11 @@ class PaymentLocalDataSource {
     for (final installment in installments) {
       final scheduled = installment.scheduledDate?.toLocal();
       if (installment.isManual && scheduled != null) {
-        final scheduledDay =
-            DateTime(scheduled.year, scheduled.month, scheduled.day);
+        final scheduledDay = DateTime(
+          scheduled.year,
+          scheduled.month,
+          scheduled.day,
+        );
         if (scheduledDay.isBefore(today)) {
           throw ArgumentError.value(
             installment.scheduledDate,
@@ -283,9 +287,7 @@ class PaymentLocalDataSource {
       );
     }
     if (pending.isNotEmpty && delta < rate) {
-      throw StateError(
-        'El abono debe cubrir al menos un dia de mora.',
-      );
+      throw StateError('El abono debe cubrir al menos un dia de mora.');
     }
     // Apply whole daily fees to the oldest days; the remainder reduces capital.
     final daysToApply = rate == 0 ? 0 : delta ~/ rate;
@@ -449,9 +451,36 @@ class PaymentLocalDataSource {
         hasOverdueInstallment: hasOverdueInstallment,
       );
       if (status != currentStatus) {
+        final client = await (_database.select(
+          _database.clientsTable,
+        )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
         await (_database.update(_database.cardsTable)
               ..where((row) => row.id.equals(card.id)))
             .write(CardsTableCompanion(status: Value(status.name)));
+        if (status == CardStatus.debtor) {
+          await OperationalNotificationsLocalDataSource(_database).add(
+            eventKey:
+                'debtor:${card.id}:${today.toIso8601String().substring(0, 10)}',
+            type: 'debtor',
+            cardId: card.id,
+            folderId: card.folderId,
+            title: 'Tarjeta pasó a Deudor',
+            message:
+                '${client?.fullName ?? 'El cliente'} tiene una cuota vencida sin liquidar.',
+            createdAt: now,
+          );
+        } else if (status == CardStatus.renewal) {
+          await OperationalNotificationsLocalDataSource(_database).add(
+            eventKey: 'renewal_ready:${card.id}',
+            type: 'renewal_ready',
+            cardId: card.id,
+            folderId: card.folderId,
+            title: 'Tarjeta lista para renovación',
+            message:
+                '${client?.fullName ?? 'El cliente'} liquidó el capital y puede iniciar el flujo de renovación.',
+            createdAt: now,
+          );
+        }
       }
     }
   }

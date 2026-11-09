@@ -33,6 +33,10 @@ extension CardStatusBalanceMapping on CardStatus {
       return this == CardStatus.paid ? this : CardStatus.renewal;
     }
 
+    if (this == CardStatus.active && hasOverdueInstallment) {
+      return CardStatus.debtor;
+    }
+
     if (this == CardStatus.renewal || this == CardStatus.paid) {
       return hasOverdueInstallment ? CardStatus.debtor : CardStatus.active;
     }

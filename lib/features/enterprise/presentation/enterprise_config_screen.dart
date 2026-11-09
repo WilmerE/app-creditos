@@ -52,6 +52,15 @@ class _ConfigFormState extends State<_ConfigForm> {
   late final _email = TextEditingController(text: widget.initial.email);
   late final _bank = TextEditingController(text: widget.initial.bankAccount);
   late final _mora = TextEditingController(text: '${widget.initial.mora}');
+  late final _deadlineHour = TextEditingController(
+    text: '${widget.initial.collectionDeadlineHour}',
+  );
+  late final _deadlineMinute = TextEditingController(
+    text: widget.initial.collectionDeadlineMinute.toString().padLeft(2, '0'),
+  );
+  late final _reminder = TextEditingController(
+    text: '${widget.initial.collectionReminderMinutes}',
+  );
   late bool _showPhone = widget.initial.showPhone;
   late bool _showNit = widget.initial.showNit;
   late bool _showEmail = widget.initial.showEmail;
@@ -66,6 +75,9 @@ class _ConfigFormState extends State<_ConfigForm> {
     _email.dispose();
     _bank.dispose();
     _mora.dispose();
+    _deadlineHour.dispose();
+    _deadlineMinute.dispose();
+    _reminder.dispose();
     super.dispose();
   }
 
@@ -85,6 +97,9 @@ class _ConfigFormState extends State<_ConfigForm> {
           showEmail: _showEmail,
           showBankAccount: _showBank,
           mora: int.parse(_mora.text.trim()),
+          collectionDeadlineHour: int.parse(_deadlineHour.text.trim()),
+          collectionDeadlineMinute: int.parse(_deadlineMinute.text.trim()),
+          collectionReminderMinutes: int.parse(_reminder.text.trim()),
         ),
       );
       if (!mounted) return;
@@ -178,6 +193,62 @@ class _ConfigFormState extends State<_ConfigForm> {
                       ? 'Ingrese un valor entero mayor que cero.'
                       : null;
                 },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Cobro diario',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _deadlineHour,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Hora límite (0–23)',
+                      ),
+                      validator: (v) {
+                        final n = int.tryParse(v ?? '');
+                        return n == null || n < 0 || n > 23
+                            ? 'Use 0–23.'
+                            : null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _deadlineMinute,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Minuto (0–59)',
+                      ),
+                      validator: (v) {
+                        final n = int.tryParse(v ?? '');
+                        return n == null || n < 0 || n > 59
+                            ? 'Use 0–59.'
+                            : null;
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _reminder,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Avisar minutos antes',
+                      ),
+                      validator: (v) {
+                        final n = int.tryParse(v ?? '');
+                        return n == null || n < 1 || n > 720
+                            ? 'Use 1–720.'
+                            : null;
+                      },
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               FilledButton(

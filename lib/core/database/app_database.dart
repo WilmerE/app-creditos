@@ -90,6 +90,12 @@ class EnterpriseConfigs extends Table {
   BoolColumn get showEmail => boolean()();
   BoolColumn get showBankAccount => boolean()();
   IntColumn get mora => integer().withDefault(const Constant(20))();
+  IntColumn get collectionDeadlineHour =>
+      integer().withDefault(const Constant(18))();
+  IntColumn get collectionDeadlineMinute =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get collectionReminderMinutes =>
+      integer().withDefault(const Constant(60))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -109,6 +115,27 @@ class MoraTracking extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {cardId};
+}
+
+@DataClassName('OperationalNotificationRow')
+class OperationalNotifications extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get eventKey => text().unique()();
+  TextColumn get type => text()();
+  TextColumn get cardId => text().nullable().references(
+    CardsTable,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+  IntColumn get folderId => integer().nullable().references(
+    CapitalGroups,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+  TextColumn get title => text()();
+  TextColumn get message => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  BoolColumn get isRead => boolean().withDefault(const Constant(false))();
 }
 
 class MoraApplications extends Table {
@@ -150,6 +177,7 @@ class PaymentChanges extends Table {
     MoraTracking,
     MoraApplications,
     PaymentChanges,
+    OperationalNotifications,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -158,7 +186,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -246,6 +274,21 @@ class AppDatabase extends _$AppDatabase {
       if (from < 11) {
         await migrator.createTable(capitalGroups);
         await migrator.addColumn(cardsTable, cardsTable.folderId);
+      }
+      if (from < 12) {
+        await migrator.addColumn(
+          enterpriseConfigs,
+          enterpriseConfigs.collectionDeadlineHour,
+        );
+        await migrator.addColumn(
+          enterpriseConfigs,
+          enterpriseConfigs.collectionDeadlineMinute,
+        );
+        await migrator.addColumn(
+          enterpriseConfigs,
+          enterpriseConfigs.collectionReminderMinutes,
+        );
+        await migrator.createTable(operationalNotifications);
       }
     },
   );

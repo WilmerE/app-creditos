@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../../../core/database/app_database.dart';
 import '../../../domain/entities/credit_card.dart';
+import '../../../../dashboard/data/operational_notifications_local_data_source.dart';
 
 class MoraLocalDataSource {
   const MoraLocalDataSource(this.db);
@@ -70,6 +71,16 @@ class MoraLocalDataSource {
           await db
               .into(db.mora)
               .insert(MoraCompanion.insert(cardId: cardId, createdAt: day));
+          await OperationalNotificationsLocalDataSource(db).add(
+            eventKey: 'mora:$cardId:${day.toIso8601String().substring(0, 10)}',
+            type: 'mora_day',
+            cardId: cardId,
+            folderId: card.folderId,
+            title: 'Nuevo día de mora',
+            message:
+                'Se registró mora correspondiente al ${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}.',
+            createdAt: day,
+          );
         }
         day = DateTime(day.year, day.month, day.day + 1);
       }
@@ -79,6 +90,25 @@ class MoraLocalDataSource {
         .insertOnConflictUpdate(
           MoraTrackingCompanion.insert(cardId: cardId, lastCheckedAt: today),
         );
+    final pendingDays = await pending(cardId);
+    if (pendingDays.length >= 30) {
+      final client = await (db.select(
+        db.clientsTable,
+      )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
+      final firstDay = _day(pendingDays.first.createdAt)
+          .toIso8601String()
+          .substring(0, 10);
+      await OperationalNotificationsLocalDataSource(db).add(
+        eventKey: 'mora_30:$cardId:$firstDay',
+        type: 'urgent_delinquency',
+        cardId: cardId,
+        folderId: card.folderId,
+        title: 'Crédito con 30+ días de mora',
+        message:
+            '${client?.fullName ?? 'El cliente'} acumula ${pendingDays.length} días de mora. Requiere seguimiento prioritario.',
+        createdAt: today,
+      );
+    }
   }
 
   Future<int> dailyRate() async {

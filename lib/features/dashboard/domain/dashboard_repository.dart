@@ -30,6 +30,7 @@ class DashboardCard {
     required this.totalInstallments,
     required this.payments,
     this.outstandingMora = 0,
+    this.overdueDays = 0,
   });
 
   final String id;
@@ -44,6 +45,7 @@ class DashboardCard {
   final int totalInstallments;
   final List<DashboardPayment> payments;
   final double outstandingMora;
+  final int overdueDays;
 
   double get pendingBalance =>
       (weeklyAmount * totalInstallments -

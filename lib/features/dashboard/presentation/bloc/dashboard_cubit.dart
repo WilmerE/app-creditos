@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import '../../../../core/database/app_database.dart';
+import '../../data/operational_notifications_local_data_source.dart';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../cobros_tarjetas/domain/entities/credit_card.dart';
@@ -145,20 +148,32 @@ class DashboardCubit extends Cubit<DashboardState> {
     this._repository, {
     DateTime Function()? clock,
     this.capitalGroupRepository,
+    this.database,
   }) : _clock = clock ?? DateTime.now,
        super(DashboardState(today: (clock ?? DateTime.now)()));
 
   final DashboardRepository _repository;
   final DateTime Function() _clock;
   final CapitalGroupRepository? capitalGroupRepository;
+  final AppDatabase? database;
   StreamSubscription<List<DashboardCard>>? _subscription;
   StreamSubscription<List<CapitalGroup>>? _capitalGroupsSubscription;
   Timer? _midnight;
+  Timer? _cutoffTimer;
 
   void start() {
     _subscription?.cancel();
     _capitalGroupsSubscription?.cancel();
     emit(state.copyWith(status: DashboardStatus.loading, today: _clock()));
+    if (database != null) {
+      final alerts = OperationalNotificationsLocalDataSource(database!);
+      alerts.evaluateCollectionCutoff(now: _clock());
+      _cutoffTimer?.cancel();
+      _cutoffTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        alerts.evaluateCollectionCutoff(now: _clock());
+        emit(state.copyWith(today: _clock()));
+      });
+    }
     _capitalGroupsSubscription = capitalGroupRepository?.watchGroups().listen((
       groups,
     ) {
@@ -209,6 +224,7 @@ class DashboardCubit extends Cubit<DashboardState> {
 
   void _scheduleMidnight() {
     _midnight?.cancel();
+    _cutoffTimer?.cancel();
     final now = _clock();
     final next = DateTime(now.year, now.month, now.day + 1);
     _midnight = Timer(next.difference(now), () {

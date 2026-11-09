@@ -12,6 +12,7 @@ import '../../../clientes/presentation/widgets/client_avatar.dart';
 import '../../../cobros_tarjetas/domain/entities/credit_card.dart';
 import '../../../cobros_tarjetas/presentation/screens/card_detail_screen.dart';
 import '../../data/drift_dashboard_repository.dart';
+import '../../data/operational_notifications_local_data_source.dart';
 import '../../domain/dashboard_repository.dart';
 import '../bloc/dashboard_cubit.dart';
 
@@ -23,6 +24,7 @@ class DashboardScreen extends StatelessWidget {
     create: (_) => DashboardCubit(
       DriftDashboardRepository(getIt<AppDatabase>()),
       capitalGroupRepository: getIt<CapitalGroupRepository>(),
+      database: getIt<AppDatabase>(),
     )..start(),
     child: const DashboardView(),
   );
@@ -102,6 +104,9 @@ class DashboardView extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _CollectionDeadlineBanner(state: state),
+                  _OperationalAlerts(folderId: state.selectedFolderId),
+                  _UrgentDelinquencySection(state: state),
                   Row(
                     children: [
                       Expanded(
@@ -238,6 +243,165 @@ class _TodayDueList extends StatefulWidget {
 
   @override
   State<_TodayDueList> createState() => _TodayDueListState();
+}
+
+class _UrgentDelinquencySection extends StatelessWidget {
+  const _UrgentDelinquencySection({required this.state});
+  final DashboardState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final urgent = state.selectedCapitalCards
+        .where(
+          (card) =>
+              card.overdueDays >= 30 &&
+              card.status != CardStatus.paid &&
+              card.status != CardStatus.deactivated,
+        )
+        .toList(growable: false);
+    if (urgent.isEmpty) return const SizedBox.shrink();
+    return Card(
+      color: const Color(0xFFFFF0E8),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Seguimiento urgente · mora de 30+ días (${urgent.length})',
+              style: const TextStyle(
+                color: Colors.deepOrange,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            for (final card in urgent)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Icons.priority_high,
+                  color: Colors.deepOrange,
+                ),
+                title: Text(card.clientName),
+                subtitle: Text(
+                  '${card.overdueDays} días · Capital pendiente: ${CurrencyFormatter.formatGtq(card.capitalPending)}',
+                ),
+                trailing: const Icon(Icons.open_in_new),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => CardDetailScreen(cardId: card.id),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OperationalAlerts extends StatelessWidget {
+  const _OperationalAlerts({required this.folderId});
+  final int? folderId;
+
+  @override
+  Widget build(BuildContext context) {
+    final db = getIt<AppDatabase>();
+    final source = OperationalNotificationsLocalDataSource(db);
+    return StreamBuilder(
+      stream: source.watch(folderId: folderId),
+      builder: (context, snapshot) {
+        final alerts = (snapshot.data ?? const [])
+            .where((alert) => !alert.isRead)
+            .take(5)
+            .toList(growable: false);
+        if (alerts.isEmpty) return const SizedBox.shrink();
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Alertas operativas (${alerts.length})',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                for (final alert in alerts)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      alert.type == 'urgent_delinquency'
+                          ? Icons.priority_high
+                          : alert.type == 'mora_day'
+                          ? Icons.warning_amber
+                          : Icons.notifications_active,
+                      color: alert.type == 'urgent_delinquency'
+                          ? Colors.deepOrange
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(alert.title),
+                    subtitle: Text(alert.message),
+                    trailing: IconButton(
+                      tooltip: 'Marcar como leída',
+                      icon: const Icon(Icons.done),
+                      onPressed: () => source.markRead(alert.id),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CollectionDeadlineBanner extends StatelessWidget {
+  const _CollectionDeadlineBanner({required this.state});
+  final DashboardState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final db = getIt<AppDatabase>();
+    return StreamBuilder(
+      stream: (db.select(
+        db.enterpriseConfigs,
+      )..where((row) => row.id.equals(1))).watchSingleOrNull(),
+      builder: (context, snapshot) {
+        final config = snapshot.data;
+        final now = DateTime.now();
+        final deadline = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          config?.collectionDeadlineHour ?? 18,
+          config?.collectionDeadlineMinute ?? 0,
+        );
+        final remaining = deadline.difference(now);
+        final reminder = config?.collectionReminderMinutes ?? 60;
+        if (state.pendingDueTodayCount == 0 ||
+            remaining.isNegative ||
+            remaining.inMinutes > reminder) {
+          return const SizedBox.shrink();
+        }
+        return Card(
+          color: const Color(0xFFFFF3CD),
+          child: ListTile(
+            leading: const Icon(Icons.schedule, color: Colors.deepOrange),
+            title: const Text(
+              'Se acerca el límite de cobro',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              '${state.pendingDueTodayCount} cuota(s) de hoy siguen pendientes. Límite: ${deadline.hour.toString().padLeft(2, '0')}:${deadline.minute.toString().padLeft(2, '0')}. Revisa Cobros de hoy para contactar a los clientes.',
+            ),
+            onTap: () => context.read<DashboardCubit>().selectFilter(
+              DashboardFilter.todayDue,
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _TodayDueListState extends State<_TodayDueList> {
