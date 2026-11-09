@@ -26,6 +26,7 @@ class DriftDashboardRepository implements DashboardRepository {
     final payments = _db.payments;
     final mora = _db.mora;
     final configs = _db.enterpriseConfigs;
+    final phones = _db.clientPhones;
     final query =
         _db.select(cards).join([
             innerJoin(clients, clients.id.equalsExp(cards.clientId)),
@@ -35,29 +36,48 @@ class DriftDashboardRepository implements DashboardRepository {
               mora.cardId.equalsExp(cards.id) & mora.pagado.equals(false),
             ),
             leftOuterJoin(configs, configs.id.equals(1)),
+            leftOuterJoin(phones, phones.clientId.equalsExp(clients.id)),
           ])
           ..where(clients.deletedAt.isNull())
           ..orderBy([
             OrderingTerm.asc(clients.fullName),
             OrderingTerm.desc(cards.createdAt),
             OrderingTerm.asc(payments.scheduledDate),
+            OrderingTerm.asc(phones.position),
           ]);
     yield* query.watch().map((rows) {
       final grouped =
           <
             String,
-            (CardRow, ClientRow, Map<String, DashboardPayment>, Set<int>, int)
+            (
+              CardRow,
+              ClientRow,
+              Map<String, DashboardPayment>,
+              Set<int>,
+              int,
+              List<String>,
+            )
           >{};
       for (final row in rows) {
         final card = row.readTable(cards);
         final client = row.readTable(clients);
         final group = grouped.putIfAbsent(
           card.id,
-          () =>
-              (card, client, {}, {}, row.readTableOrNull(configs)?.mora ?? 20),
+          () => (
+            card,
+            client,
+            {},
+            {},
+            row.readTableOrNull(configs)?.mora ?? 20,
+            <String>[],
+          ),
         );
         final payment = row.readTableOrNull(payments);
         final late = row.readTableOrNull(mora);
+        final phone = row.readTableOrNull(phones);
+        if (phone != null && !group.$6.contains(phone.phoneNumber)) {
+          group.$6.add(phone.phoneNumber);
+        }
         if (late != null) group.$4.add(late.id);
         if (payment != null) {
           group.$3[payment.id] = DashboardPayment(
@@ -71,7 +91,8 @@ class DriftDashboardRepository implements DashboardRepository {
       }
       return grouped.values
           .map((group) {
-            final (card, client, paymentMap, overdueDays, rate) = group;
+            final (card, client, paymentMap, overdueDays, rate, clientPhones) =
+                group;
             final installments = paymentMap.values.toList(growable: false);
             final moraAmount = overdueDays.length * rate;
             if (card.weeklyAmount <= 0 || card.totalInstallments <= 0) {
@@ -109,6 +130,7 @@ class DriftDashboardRepository implements DashboardRepository {
               clientName: client.fullName,
               alias: client.alias,
               photoPath: client.photoPath,
+              primaryPhone: clientPhones.isEmpty ? null : clientPhones.first,
               status: storedStatus.forBalance(
                 pendingBalance: pendingBalance,
                 hasOverdueInstallment: hasOverdueInstallment,
@@ -169,6 +191,42 @@ class DriftDashboardRepository implements DashboardRepository {
           (fees[row.id] ?? 0);
 
       final cardPending = pending(card);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final hasOverdueInstallment = rows.any((payment) {
+        if (payment.cardId != cardId || payment.isManual) return false;
+        final scheduled = payment.scheduledDate?.toLocal();
+        if (scheduled == null) return false;
+        return DateTime(
+              scheduled.year,
+              scheduled.month,
+              scheduled.day,
+            ).isBefore(today) &&
+            payment.amountPaid - payment.moraCents / 100 <
+                card.weeklyAmount - _epsilon;
+      });
+      final currentStatus = CardStatus.values
+          .byName(card.status)
+          .forBalance(
+            pendingBalance: cardPending,
+            hasOverdueInstallment: hasOverdueInstallment,
+          );
+      final allowedTransition = switch (currentStatus) {
+        CardStatus.debtor => status == CardStatus.deactivated,
+        CardStatus.deactivated => status == CardStatus.active,
+        CardStatus.renewal => status == CardStatus.paid,
+        _ => status != CardStatus.deactivated,
+      };
+      if (!allowedTransition) {
+        throw StateError(switch (currentStatus) {
+          CardStatus.debtor => 'Una tarjeta deudora solo puede desactivarse.',
+          CardStatus.deactivated =>
+            'Una tarjeta desactivada solo puede reactivarse.',
+          CardStatus.renewal =>
+            'Una tarjeta en renovación solo puede pasar a pagada.',
+          _ => 'Transición de estado no permitida.',
+        });
+      }
       if (status == CardStatus.renewal && cardPending > _epsilon) {
         throw StateError(
           'No se puede marcar como en renovación una tarjeta con saldo pendiente.',
@@ -180,6 +238,7 @@ class DriftDashboardRepository implements DashboardRepository {
         );
       }
       if (status.isOpen &&
+          status != CardStatus.deactivated &&
           related.any(
             (other) =>
                 other.id != card.id &&
@@ -192,7 +251,8 @@ class DriftDashboardRepository implements DashboardRepository {
         );
       }
       if ((status == CardStatus.active || status == CardStatus.debtor) &&
-          cardPending <= _epsilon) {
+          cardPending <= _epsilon &&
+          currentStatus != CardStatus.deactivated) {
         throw StateError(
           'Una tarjeta sin saldo pendiente debe estar en renovación o pagada.',
         );

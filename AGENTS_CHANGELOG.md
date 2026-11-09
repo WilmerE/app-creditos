@@ -124,3 +124,19 @@
 - **Modulos modificados:** `features/dashboard/presentation`.
 - **Cambios realizados:** Se agregó un campo de búsqueda instantánea sobre la lista de tarjetas del dashboard; filtra por nombre de cliente o referencia/alias, ignora mayúsculas y acentos, y permite limpiar la búsqueda.
 - **Contexto tecnico:** El filtrado se aplica a las tarjetas visibles del filtro actual y no altera los datos ni el estado financiero.
+
+## [Transicion de tarjetas en renovacion] - 2026-11-08
+- **Modulos modificados:** `features/dashboard`.
+- **Cambios realizados:** El menú de una tarjeta en renovación solo ofrece pasarla a pagada. El repositorio también rechaza cualquier otro cambio manual de estado cuando la deuda total ya es cero.
+- **Contexto tecnico:** Se mantiene la validación transaccional de saldo antes de permitir el estado pagado; la renovación sigue siendo resultado de haber liquidado el saldo.
+
+## [Desactivacion de tarjetas deudoras] - 2026-11-08
+- **Modulos modificados:** `features/cobros_tarjetas`, `features/dashboard` y creación de tarjetas.
+- **Cambios realizados:** Se agregó el estado `deactivated`. Una tarjeta deudora solo permite desactivarse; una desactivada solo permite reactivarse; renovación solo permite pasar a pagada. Las desactivadas tienen una bandeja propia y quedan fuera de los totales y filas de caja del dashboard. La creación de tarjeta se bloquea si el cliente conserva una tarjeta en estado deudor o desactivada, incluso si su saldo figura en cero.
+- **Contexto tecnico:** No se cambió el esquema Drift: el estado se conserva en el campo textual existente. La mora de tarjetas desactivadas sigue acumulándose y su deuda permanece visible; la desactivación solo las excluye de las métricas de caja.
+
+## [Cobros programados para hoy] - 2026-11-08
+- **Modulos modificados:** `features/dashboard`.
+- **Cambios realizados:** Se agregó el acceso del dashboard a cuotas con vencimiento hoy y grupos de Pendientes/Pagados; esta sección aparece primero y abre seleccionada por defecto. Los abonos parciales permanecen en Pendientes y muestran abonado a capital y resto de la cuota; las cuotas manuales no se incluyen.
+- **Contexto tecnico:** La clasificación compara el capital aplicado a la cuota (`amountPaid - moraPaid`) con el importe semanal. Se filtra por fecha calendario local programada; la mora/deuda no se cambia por estar pendiente en el mismo día del vencimiento.
+- **Actualización:** En el grupo Pendientes se agregaron acciones para llamar y abrir el chat de WhatsApp usando el teléfono principal del cliente; sin teléfono registrado, las acciones quedan deshabilitadas.

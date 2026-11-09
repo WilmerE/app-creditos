@@ -23,6 +23,7 @@ class DashboardCard {
     required this.clientName,
     required this.alias,
     required this.photoPath,
+    this.primaryPhone,
     required this.status,
     required this.weeklyAmount,
     required this.totalInstallments,
@@ -35,6 +36,7 @@ class DashboardCard {
   final String clientName;
   final String? alias;
   final String? photoPath;
+  final String? primaryPhone;
   final CardStatus status;
   final double weeklyAmount;
   final int totalInstallments;
@@ -56,6 +58,22 @@ class DashboardCard {
   int get remainingInstallments => capitalPending <= 0.005
       ? 0
       : (capitalPending / weeklyAmount).ceil().clamp(0, totalInstallments);
+}
+
+class TodayDuePayment {
+  const TodayDuePayment({required this.card, required this.payment});
+
+  final DashboardCard card;
+  final DashboardPayment payment;
+
+  /// Amount applied to this installment's capital, excluding late-fee payment.
+  double get paidAmount =>
+      (payment.amountPaid - payment.moraPaid).clamp(0, card.weeklyAmount);
+
+  double get remainingAmount =>
+      (card.weeklyAmount - paidAmount).clamp(0, card.weeklyAmount);
+
+  bool get isPaid => remainingAmount <= 0.005;
 }
 
 abstract interface class DashboardRepository {

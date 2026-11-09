@@ -43,6 +43,10 @@ class CreditCardLocalDataSource {
     final ids = <String>{};
     for (final row in cards) {
       final card = _toEntity(row);
+      if (card.status == CardStatus.debtor ||
+          card.status == CardStatus.deactivated) {
+        ids.add(card.clientId);
+      }
       if (ids.contains(card.clientId)) continue;
       final balances = await openCardBalances(card.clientId);
       if (balances.any((balance) => balance.pending > 0.005)) {
@@ -79,6 +83,18 @@ class CreditCardLocalDataSource {
   Future<void> createCard(CreditCard card, List<PaymentInstallment> schedule) {
     return _database.transaction(() async {
       final cards = _database.cardsTable;
+      final previousCards = await (_database.select(
+        cards,
+      )..where((row) => row.clientId.equals(card.clientId))).get();
+      if (previousCards.any(
+        (previous) =>
+            previous.status == CardStatus.debtor.name ||
+            previous.status == CardStatus.deactivated.name,
+      )) {
+        throw const RenewalBlockedException(
+          'No se puede crear una tarjeta nueva mientras el cliente tenga una tarjeta deudora o desactivada.',
+        );
+      }
       final balances = await openCardBalances(card.clientId);
       if (balances.any((balance) => balance.pending > 0.005)) {
         throw const RenewalBlockedException();

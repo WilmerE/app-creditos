@@ -127,6 +127,7 @@ class DatabaseSeed {
           CardStatus.renewal => 160,
           CardStatus.debtor => 90,
           CardStatus.paid => 210,
+          CardStatus.deactivated => 90,
           CardStatus.archived => throw StateError(
             'Estado de prueba no válido.',
           ),

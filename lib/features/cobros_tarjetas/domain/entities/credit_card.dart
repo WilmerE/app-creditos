@@ -5,6 +5,7 @@ enum CardStatus {
   debtor('Deudor'),
   paid('Pagada'),
   renewal('Renovación'),
+  deactivated('Desactivada'),
   archived('Archivada');
 
   const CardStatus(this.label);
@@ -12,7 +13,11 @@ enum CardStatus {
   final String label;
 
   /// Statuses of cards that may still hold a pending balance.
-  bool get isOpen => this == active || this == debtor || this == renewal;
+  bool get isOpen =>
+      this == active ||
+      this == debtor ||
+      this == renewal ||
+      this == deactivated;
 }
 
 extension CardStatusBalanceMapping on CardStatus {
@@ -20,7 +25,9 @@ extension CardStatusBalanceMapping on CardStatus {
     required double pendingBalance,
     required bool hasOverdueInstallment,
   }) {
-    if (this == CardStatus.archived) return this;
+    if (this == CardStatus.archived || this == CardStatus.deactivated) {
+      return this;
+    }
 
     if (pendingBalance <= 0.005) {
       return this == CardStatus.paid ? this : CardStatus.renewal;

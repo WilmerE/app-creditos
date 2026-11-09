@@ -360,7 +360,7 @@ class _ExistingClientSelectorState extends State<_ExistingClientSelector> {
             for (final entry in const {
               ClientCardFilter.all: 'Todos',
               ClientCardFilter.eligible: 'Sin tarjeta activa',
-              ClientCardFilter.withActiveCard: 'Con tarjeta activa',
+              ClientCardFilter.withActiveCard: 'No elegibles',
             }.entries)
               ChoiceChip(
                 label: Text(entry.value),
@@ -406,7 +406,7 @@ class _ExistingClientSelectorState extends State<_ExistingClientSelector> {
                                 size: 16,
                                 color: theme.colorScheme.error,
                               ),
-                              label: const Text('Tarjeta activa'),
+                              label: const Text('No elegible'),
                             )
                           : const Chip(
                               avatar: Icon(

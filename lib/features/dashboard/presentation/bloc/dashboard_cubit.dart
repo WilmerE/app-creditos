@@ -7,13 +7,21 @@ import '../../domain/dashboard_repository.dart';
 
 enum DashboardStatus { loading, ready, error }
 
-enum DashboardFilter { active, debtor, renewal, paid, cash }
+enum DashboardFilter {
+  active,
+  debtor,
+  renewal,
+  paid,
+  deactivated,
+  todayDue,
+  cash,
+}
 
 class DashboardState {
   const DashboardState({
     this.status = DashboardStatus.loading,
     this.cards = const [],
-    this.filter = DashboardFilter.active,
+    this.filter = DashboardFilter.todayDue,
     required this.today,
   });
 
@@ -35,24 +43,51 @@ class DashboardState {
         (status != CardStatus.renewal || card.pendingBalance <= 0.005);
   }).length;
 
-  double get projectedToday => cards.fold(
-    0,
-    (total, card) =>
-        total +
-        card.payments
-                .where((p) => !p.isManual && _isToday(p.scheduledDate))
-                .length *
-            card.weeklyAmount,
-  );
+  double get projectedToday => cards
+      .where((card) => card.status != CardStatus.deactivated)
+      .fold(
+        0,
+        (total, card) =>
+            total +
+            card.payments
+                    .where((p) => !p.isManual && _isToday(p.scheduledDate))
+                    .length *
+                card.weeklyAmount,
+      );
 
-  double get estimatedPaidToday => cards.fold(
-    0,
-    (total, card) =>
-        total +
-        card.payments
-            .where((p) => _isToday(p.updatedAt))
-            .fold<double>(0, (sum, payment) => sum + payment.amountPaid),
-  );
+  double get estimatedPaidToday => cards
+      .where((card) => card.status != CardStatus.deactivated)
+      .fold(
+        0,
+        (total, card) =>
+            total +
+            card.payments
+                .where((p) => _isToday(p.updatedAt))
+                .fold<double>(0, (sum, payment) => sum + payment.amountPaid),
+      );
+
+  List<TodayDuePayment> get todayDuePayments {
+    final duePayments =
+        [
+          for (final card in cards)
+            if (card.status == CardStatus.active ||
+                card.status == CardStatus.debtor)
+              for (final payment in card.payments)
+                if (!payment.isManual && _isToday(payment.scheduledDate))
+                  TodayDuePayment(card: card, payment: payment),
+        ]..sort(
+          (a, b) => a.card.clientName.toLowerCase().compareTo(
+            b.card.clientName.toLowerCase(),
+          ),
+        );
+    return duePayments;
+  }
+
+  int get pendingDueTodayCount =>
+      todayDuePayments.where((due) => !due.isPaid).length;
+
+  int get paidDueTodayCount =>
+      todayDuePayments.where((due) => due.isPaid).length;
 
   List<DashboardCard> get visibleCards => cards
       .where((card) {
@@ -62,11 +97,15 @@ class DashboardState {
           DashboardFilter.renewal =>
             card.status == CardStatus.renewal && card.pendingBalance <= 0.005,
           DashboardFilter.paid => card.status == CardStatus.paid,
-          DashboardFilter.cash => card.payments.any(
-            (p) =>
-                (!p.isManual && _isToday(p.scheduledDate)) ||
-                (p.amountPaid > 0 && _isToday(p.updatedAt)),
-          ),
+          DashboardFilter.deactivated => card.status == CardStatus.deactivated,
+          DashboardFilter.todayDue => false,
+          DashboardFilter.cash =>
+            card.status != CardStatus.deactivated &&
+                card.payments.any(
+                  (p) =>
+                      (!p.isManual && _isToday(p.scheduledDate)) ||
+                      (p.amountPaid > 0 && _isToday(p.updatedAt)),
+                ),
         };
       })
       .toList(growable: false);
