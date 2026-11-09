@@ -67,7 +67,7 @@ class CardDetailView extends StatelessWidget {
                   padding: const EdgeInsets.only(right: 16),
                   child: Center(
                     child: Text(
-                      'Pendiente ${CurrencyFormatter.formatGtq(state.pendingBalance)}',
+                      'Total hoy ${CurrencyFormatter.formatGtq(state.totalDueToday)}',
                     ),
                   ),
                 ),
@@ -101,9 +101,15 @@ class CardDetailView extends StatelessWidget {
                 weeklyAmount: card.weeklyAmount,
                 enterpriseConfig: enterpriseConfig,
                 payments: state.installments,
+                capitalPending: state.pendingBalance,
+                lateFee: state.lateFee,
                 renewalColor: colorFromHex(card.colorHex)
                     .withValues(alpha: 0.18),
                 onAutoSave: context.read<CardDetailCubit>().autoSave,
+                onAddRow: context.read<CardDetailCubit>().addEmptyInstallment,
+                onDeleteRow: context
+                    .read<CardDetailCubit>()
+                    .deleteEmptyLastInstallment,
               ),
             ),
           },

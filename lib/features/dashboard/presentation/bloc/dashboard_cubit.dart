@@ -22,21 +22,26 @@ class DashboardState {
   final DashboardFilter filter;
   final DateTime today;
 
-  bool _isToday(DateTime date) {
+  bool _isToday(DateTime? date) {
+    if (date == null) return false;
     final local = date.toLocal();
     return local.year == today.year &&
         local.month == today.month &&
         local.day == today.day;
   }
 
-  int count(CardStatus status) =>
-      cards.where((card) => card.status == status).length;
+  int count(CardStatus status) => cards.where((card) {
+    return card.status == status &&
+        (status != CardStatus.renewal || card.pendingBalance <= 0.005);
+  }).length;
 
   double get projectedToday => cards.fold(
     0,
     (total, card) =>
         total +
-        card.payments.where((p) => _isToday(p.scheduledDate)).length *
+        card.payments
+                .where((p) => !p.isManual && _isToday(p.scheduledDate))
+                .length *
             card.weeklyAmount,
   );
 
@@ -54,11 +59,12 @@ class DashboardState {
         return switch (filter) {
           DashboardFilter.active => card.status == CardStatus.active,
           DashboardFilter.debtor => card.status == CardStatus.debtor,
-          DashboardFilter.renewal => card.status == CardStatus.renewal,
+          DashboardFilter.renewal =>
+            card.status == CardStatus.renewal && card.pendingBalance <= 0.005,
           DashboardFilter.paid => card.status == CardStatus.paid,
           DashboardFilter.cash => card.payments.any(
             (p) =>
-                _isToday(p.scheduledDate) ||
+                (!p.isManual && _isToday(p.scheduledDate)) ||
                 (p.amountPaid > 0 && _isToday(p.updatedAt)),
           ),
         };
@@ -124,15 +130,7 @@ class DashboardCubit extends Cubit<DashboardState> {
     final now = _clock();
     final next = DateTime(now.year, now.month, now.day + 1);
     _midnight = Timer(next.difference(now), () {
-      emit(
-        DashboardState(
-          status: state.status,
-          cards: state.cards,
-          filter: state.filter,
-          today: _clock(),
-        ),
-      );
-      _scheduleMidnight();
+      start();
     });
   }
 

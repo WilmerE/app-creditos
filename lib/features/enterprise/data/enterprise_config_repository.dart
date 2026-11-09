@@ -24,23 +24,34 @@ class EnterpriseConfigRepository {
                 showNit: row.showNit,
                 showEmail: row.showEmail,
                 showBankAccount: row.showBankAccount,
+                mora: row.mora,
               ),
       );
 
-  Future<void> save(EnterpriseConfig config) => _database
-      .into(_database.enterpriseConfigs)
-      .insertOnConflictUpdate(
-        EnterpriseConfigsCompanion.insert(
-          id: const Value(1),
-          name: config.name,
-          phone: config.phone,
-          nit: config.nit,
-          email: config.email,
-          bankAccount: config.bankAccount,
-          showPhone: config.showPhone,
-          showNit: config.showNit,
-          showEmail: config.showEmail,
-          showBankAccount: config.showBankAccount,
-        ),
+  Future<void> save(EnterpriseConfig config) {
+    if (config.mora <= 0) {
+      throw ArgumentError.value(
+        config.mora,
+        'mora',
+        'Debe ser mayor que cero.',
       );
+    }
+    return _database
+        .into(_database.enterpriseConfigs)
+        .insertOnConflictUpdate(
+          EnterpriseConfigsCompanion.insert(
+            id: const Value(1),
+            name: config.name,
+            phone: config.phone,
+            nit: config.nit,
+            email: config.email,
+            bankAccount: config.bankAccount,
+            showPhone: config.showPhone,
+            showNit: config.showNit,
+            showEmail: config.showEmail,
+            showBankAccount: config.showBankAccount,
+            mora: Value(config.mora),
+          ),
+        );
+  }
 }

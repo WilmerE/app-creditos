@@ -27,6 +27,9 @@
 # Windows build output
 /windows/flutter/ephemeral/
 
+# Local Google Maps key used by --dart-define-from-file
+/google_maps.local.json
+
 # IDE and editor files
 .idea/
 *.iml

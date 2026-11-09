@@ -15,6 +15,25 @@ enum CardStatus {
   bool get isOpen => this == active || this == debtor || this == renewal;
 }
 
+extension CardStatusBalanceMapping on CardStatus {
+  CardStatus forBalance({
+    required double pendingBalance,
+    required bool hasOverdueInstallment,
+  }) {
+    if (this == CardStatus.archived) return this;
+
+    if (pendingBalance <= 0.005) {
+      return this == CardStatus.paid ? this : CardStatus.renewal;
+    }
+
+    if (this == CardStatus.renewal || this == CardStatus.paid) {
+      return hasOverdueInstallment ? CardStatus.debtor : CardStatus.active;
+    }
+
+    return this;
+  }
+}
+
 class CreditCard extends Equatable {
   const CreditCard({
     required this.id,
@@ -55,6 +74,25 @@ class CreditCard extends Equatable {
     startDate,
     createdAt,
   ];
+}
+
+class LateFee extends Equatable {
+  const LateFee({
+    this.days = 0,
+    this.dueDate,
+    this.rate = 20,
+    this.dates = const [],
+  });
+
+  final int days;
+  final DateTime? dueDate;
+  final int rate;
+  final List<DateTime> dates;
+
+  double get amount => days * rate.toDouble();
+
+  @override
+  List<Object?> get props => [days, dueDate, rate, dates];
 }
 
 /// A card together with what the client still owes on it.

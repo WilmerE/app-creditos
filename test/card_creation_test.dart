@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show OrderingTerm, Value;
+import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -76,7 +76,7 @@ void main() {
       expect(p.installments[1].scheduledDate, DateTime(2026, 11, 21));
       expect(
         p.installments.every(
-          (i) => i.scheduledDate.weekday == DateTime.saturday,
+          (i) => i.scheduledDate!.weekday == DateTime.saturday,
         ),
         isTrue,
       );
@@ -164,21 +164,73 @@ void main() {
       expect(await db.select(db.cardsTable).get(), hasLength(1));
     });
 
-    test('allows renewal after settling and marks it as renewal', () async {
-      final first = await create();
-      await (db.update(db.payments)..where((p) => p.cardId.equals(first)))
-          .write(const PaymentsCompanion(amountPaid: Value(125)));
-      expect(await creation.isRenewalBlocked('c1'), isFalse);
+    test(
+      'repository rechecks the renewal lock inside the insertion transaction',
+      () async {
+        final first = await create();
+        final original = (await repo.getCard(first))!;
+        final replacement = CreditCard(
+          id: 'replacement',
+          clientId: original.clientId,
+          requestedAmount: original.requestedAmount,
+          deliveredAmount: original.deliveredAmount,
+          totalInstallments: original.totalInstallments,
+          weeklyAmount: original.weeklyAmount,
+          status: CardStatus.active,
+          colorHex: original.colorHex,
+          startDate: original.startDate,
+          createdAt: original.createdAt,
+        );
+        await expectLater(
+          repo.createCard(replacement, []),
+          throwsA(isA<RenewalBlockedException>()),
+        );
+        expect(await db.select(db.cardsTable).get(), hasLength(1));
+        expect(await db.select(db.payments).get(), hasLength(6));
+      },
+    );
 
-      final second = await create();
-      final cards = await db.select(db.cardsTable).get();
-      expect(cards.firstWhere((c) => c.id == first).status, 'paid');
-      expect(cards.firstWhere((c) => c.id == second).status, 'renewal');
-      final renewalRows = await (db.select(
-        db.payments,
-      )..where((p) => p.cardId.equals(second))).get();
-      expect(renewalRows.every((p) => p.isRenewal), isTrue);
-    });
+    test(
+      'settling moves a card to renewal and issuing another pays it off',
+      () async {
+        final first = await create();
+        final installments = await repo.watchInstallments(first).first;
+        await repo.saveInstallments([
+          for (final installment in installments)
+            installment.copyWith(amountPaid: 125),
+        ]);
+        expect(await creation.isRenewalBlocked('c1'), isFalse);
+        expect((await repo.getCard(first))!.status, CardStatus.renewal);
+
+        final second = await create();
+        final cards = await db.select(db.cardsTable).get();
+        expect(cards.firstWhere((c) => c.id == first).status, 'paid');
+        expect(cards.firstWhere((c) => c.id == second).status, 'active');
+        final renewalRows = await (db.select(
+          db.payments,
+        )..where((p) => p.cardId.equals(second))).get();
+        expect(renewalRows.every((p) => p.isRenewal), isTrue);
+      },
+    );
+
+    test(
+      'a renewed card with a pending balance returns to active or debtor',
+      () async {
+        final cardId = await create();
+        final installments = await repo.watchInstallments(cardId).first;
+        await repo.saveInstallments([
+          for (final installment in installments)
+            installment.copyWith(amountPaid: 125),
+        ]);
+        await repo.saveInstallments([
+          installments.first.copyWith(amountPaid: 0),
+        ]);
+        expect(
+          (await repo.getCard(cardId))!.status,
+          anyOf(CardStatus.active, CardStatus.debtor),
+        );
+      },
+    );
   });
 
   testWidgets('screen previews the plan and enables saving', (tester) async {

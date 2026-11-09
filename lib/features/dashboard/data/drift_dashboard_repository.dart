@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../cobros_tarjetas/domain/entities/credit_card.dart';
+import '../../cobros_tarjetas/data/datasources/local/mora_local_data_source.dart';
 import '../domain/dashboard_repository.dart';
 
 class DriftDashboardRepository implements DashboardRepository {
@@ -11,14 +12,29 @@ class DriftDashboardRepository implements DashboardRepository {
   static const _epsilon = 0.005;
 
   @override
-  Stream<List<DashboardCard>> watchCards() {
+  Stream<List<DashboardCard>> watchCards() async* {
+    await _db.transaction(() async {
+      final all = await _db.select(_db.cardsTable).get();
+      for (final card in all) {
+        if (CardStatus.values.byName(card.status).isOpen) {
+          await MoraLocalDataSource(_db).accrue(card.id);
+        }
+      }
+    });
     final cards = _db.cardsTable;
     final clients = _db.clientsTable;
     final payments = _db.payments;
+    final mora = _db.mora;
+    final configs = _db.enterpriseConfigs;
     final query =
         _db.select(cards).join([
             innerJoin(clients, clients.id.equalsExp(cards.clientId)),
             leftOuterJoin(payments, payments.cardId.equalsExp(cards.id)),
+            leftOuterJoin(
+              mora,
+              mora.cardId.equalsExp(cards.id) & mora.pagado.equals(false),
+            ),
+            leftOuterJoin(configs, configs.id.equals(1)),
           ])
           ..where(clients.deletedAt.isNull())
           ..orderBy([
@@ -26,39 +42,81 @@ class DriftDashboardRepository implements DashboardRepository {
             OrderingTerm.desc(cards.createdAt),
             OrderingTerm.asc(payments.scheduledDate),
           ]);
-    return query.watch().map((rows) {
-      final grouped = <String, (CardRow, ClientRow, List<DashboardPayment>)>{};
+    yield* query.watch().map((rows) {
+      final grouped =
+          <
+            String,
+            (CardRow, ClientRow, Map<String, DashboardPayment>, Set<int>, int)
+          >{};
       for (final row in rows) {
         final card = row.readTable(cards);
         final client = row.readTable(clients);
-        final group = grouped.putIfAbsent(card.id, () => (card, client, []));
+        final group = grouped.putIfAbsent(
+          card.id,
+          () =>
+              (card, client, {}, {}, row.readTableOrNull(configs)?.mora ?? 20),
+        );
         final payment = row.readTableOrNull(payments);
+        final late = row.readTableOrNull(mora);
+        if (late != null) group.$4.add(late.id);
         if (payment != null) {
-          group.$3.add(
-            DashboardPayment(
-              scheduledDate: payment.scheduledDate,
-              updatedAt: payment.updatedAt,
-              amountPaid: payment.amountPaid,
-            ),
+          group.$3[payment.id] = DashboardPayment(
+            scheduledDate: payment.scheduledDate,
+            updatedAt: payment.updatedAt,
+            amountPaid: payment.amountPaid,
+            isManual: payment.isManual,
+            moraPaid: payment.moraCents / 100,
           );
         }
       }
       return grouped.values
           .map((group) {
-            final (card, client, installments) = group;
+            final (card, client, paymentMap, overdueDays, rate) = group;
+            final installments = paymentMap.values.toList(growable: false);
+            final moraAmount = overdueDays.length * rate;
             if (card.weeklyAmount <= 0 || card.totalInstallments <= 0) {
               throw StateError('La tarjeta ${card.id} tiene un plan inválido.');
             }
+            final pendingBalance =
+                (card.totalInstallments * card.weeklyAmount -
+                        installments.fold<double>(
+                          0,
+                          (total, payment) =>
+                              total + payment.amountPaid - payment.moraPaid,
+                        ))
+                    .clamp(0, double.infinity) +
+                (overdueDays.isNotEmpty && moraAmount <= 0
+                    ? 0.01
+                    : moraAmount.toDouble());
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final hasOverdueInstallment = installments.any((payment) {
+              if (payment.isManual) return false;
+              final scheduled = payment.scheduledDate?.toLocal();
+              if (scheduled == null) return false;
+              return DateTime(
+                    scheduled.year,
+                    scheduled.month,
+                    scheduled.day,
+                  ).isBefore(today) &&
+                  payment.amountPaid - payment.moraPaid <
+                      card.weeklyAmount - _epsilon;
+            });
+            final storedStatus = CardStatus.values.byName(card.status);
             return DashboardCard(
               id: card.id,
               clientId: client.id,
               clientName: client.fullName,
               alias: client.alias,
               photoPath: client.photoPath,
-              status: CardStatus.values.byName(card.status),
+              status: storedStatus.forBalance(
+                pendingBalance: pendingBalance,
+                hasOverdueInstallment: hasOverdueInstallment,
+              ),
               weeklyAmount: card.weeklyAmount,
               totalInstallments: card.totalInstallments,
               payments: List.unmodifiable(installments),
+              outstandingMora: moraAmount.toDouble(),
             );
           })
           .toList(growable: false);
@@ -76,11 +134,24 @@ class DriftDashboardRepository implements DashboardRepository {
         cards,
       )..where((c) => c.id.equals(cardId))).getSingleOrNull();
       if (card == null) throw StateError('La tarjeta ya no existe.');
-      if (card.status == status.name) return;
 
       final related = await (_db.select(
         cards,
       )..where((c) => c.clientId.equals(card.clientId))).get();
+      final moraSource = MoraLocalDataSource(_db);
+      for (final other in related) {
+        if (CardStatus.values.byName(other.status).isOpen) {
+          await moraSource.accrue(other.id);
+        }
+      }
+      final rate = await moraSource.dailyRate();
+      final fees = <String, double>{};
+      for (final other in related) {
+        final days = await moraSource.pending(other.id);
+        fees[other.id] = days.isNotEmpty && rate <= 0
+            ? 0.01
+            : (days.length * rate).toDouble();
+      }
       final totals = <String, double>{};
       final rows = await (_db.select(
         _db.payments,
@@ -88,13 +159,21 @@ class DriftDashboardRepository implements DashboardRepository {
       for (final row in rows) {
         totals.update(
           row.cardId,
-          (value) => value + row.amountPaid,
-          ifAbsent: () => row.amountPaid,
+          (value) => value + row.amountPaid - row.moraCents / 100,
+          ifAbsent: () => row.amountPaid - row.moraCents / 100,
         );
       }
       double pending(CardRow row) =>
-          row.totalInstallments * row.weeklyAmount - (totals[row.id] ?? 0);
+          (row.totalInstallments * row.weeklyAmount - (totals[row.id] ?? 0))
+              .clamp(0, double.infinity) +
+          (fees[row.id] ?? 0);
 
+      final cardPending = pending(card);
+      if (status == CardStatus.renewal && cardPending > _epsilon) {
+        throw StateError(
+          'No se puede marcar como en renovación una tarjeta con saldo pendiente.',
+        );
+      }
       if (status == CardStatus.paid && pending(card) > _epsilon) {
         throw StateError(
           'No se puede marcar como pagada una tarjeta con saldo pendiente.',
@@ -104,13 +183,21 @@ class DriftDashboardRepository implements DashboardRepository {
           related.any(
             (other) =>
                 other.id != card.id &&
-                CardStatus.values.byName(other.status).isOpen &&
+                (CardStatus.values.byName(other.status).isOpen ||
+                    (fees[other.id] ?? 0) > _epsilon) &&
                 pending(other) > _epsilon,
           )) {
         throw StateError(
           'El cliente ya tiene otra tarjeta abierta con saldo pendiente.',
         );
       }
+      if ((status == CardStatus.active || status == CardStatus.debtor) &&
+          cardPending <= _epsilon) {
+        throw StateError(
+          'Una tarjeta sin saldo pendiente debe estar en renovación o pagada.',
+        );
+      }
+      if (card.status == status.name) return;
       await (_db.update(cards)..where((c) => c.id.equals(cardId))).write(
         CardsTableCompanion(status: Value(status.name)),
       );

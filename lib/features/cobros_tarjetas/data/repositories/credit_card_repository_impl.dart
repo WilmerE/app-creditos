@@ -41,6 +41,23 @@ class CreditCardRepositoryImpl implements CreditCardRepository {
       _payments.watchInstallmentsByCard(cardId);
 
   @override
+  Future<void> accrueMora(String cardId, {DateTime? now}) =>
+      _payments.accrueMora(cardId, now: now);
+
+  @override
+  Stream<LateFee> watchMora(String cardId) => _payments.watchMora(cardId);
+
+  @override
   Future<void> saveInstallments(List<PaymentInstallment> installments) =>
       _payments.updateInstallments(installments);
+
+  @override
+  Future<void> addEmptyInstallment(String cardId) =>
+      _payments.addEmptyInstallment(cardId);
+
+  @override
+  Future<void> deleteEmptyLastInstallment(
+    String cardId,
+    String installmentId,
+  ) => _payments.deleteEmptyLastInstallment(cardId, installmentId);
 }

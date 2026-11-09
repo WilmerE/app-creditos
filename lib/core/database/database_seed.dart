@@ -100,6 +100,8 @@ class DatabaseSeed {
       final phones = <ClientPhonesCompanion>[];
       final cards = <CardsTableCompanion>[];
       final payments = <PaymentsCompanion>[];
+      final mora = <MoraCompanion>[];
+      final tracking = <MoraTrackingCompanion>[];
 
       for (var clientIndex = 0; clientIndex < 80; clientIndex++) {
         final clientId = _uuid.v4();
@@ -121,7 +123,8 @@ class DatabaseSeed {
                 CardStatus.renewal,
               ][(clientIndex - 20) % 4];
         final latestDaysAgo = switch (latestStatus) {
-          CardStatus.active || CardStatus.renewal => 19,
+          CardStatus.active => 19,
+          CardStatus.renewal => 160,
           CardStatus.debtor => 90,
           CardStatus.paid => 210,
           CardStatus.archived => throw StateError(
@@ -194,11 +197,24 @@ class DatabaseSeed {
               createdAt: start,
             ),
           );
+          if (status == CardStatus.debtor) {
+            mora.addAll([
+              MoraCompanion.insert(
+                cardId: cardId,
+                createdAt: _daysBefore(today, 1),
+              ),
+              MoraCompanion.insert(cardId: cardId, createdAt: today),
+            ]);
+          }
+          tracking.add(
+            MoraTrackingCompanion.insert(cardId: cardId, lastCheckedAt: today),
+          );
 
           var balance = plan.total;
           for (var i = 0; i < plan.installments.length; i++) {
             final item = plan.installments[i];
-            final paid = status == CardStatus.paid
+            final paid =
+                status == CardStatus.paid || status == CardStatus.renewal
                 ? option.installmentAmount
                 : i < (status == CardStatus.debtor ? 1 : 2)
                 ? option.installmentAmount
@@ -214,7 +230,7 @@ class DatabaseSeed {
               PaymentsCompanion.insert(
                 id: item.id,
                 cardId: Value(cardId),
-                scheduledDate: item.scheduledDate,
+                scheduledDate: Value(item.scheduledDate),
                 amountPaid: Value(paid),
                 balanceAfter: balance,
                 paymentType: Value(type.name),
@@ -222,7 +238,9 @@ class DatabaseSeed {
                   type == PaymentType.cash ? null : 'SEED-$cardId-$i',
                 ),
                 isRenewal: Value(isRenewal),
-                updatedAt: Value(paid > 0 ? item.scheduledDate : start),
+                updatedAt: Value(paid > 0 ? item.scheduledDate! : start),
+                createdAt: Value(paid > 0 ? item.scheduledDate : null),
+                createdAtEstimated: Value(paid > 0),
               ),
             );
           }
@@ -234,6 +252,8 @@ class DatabaseSeed {
         batch.insertAll(_database.clientPhones, phones);
         batch.insertAll(_database.cardsTable, cards);
         batch.insertAll(_database.payments, payments);
+        batch.insertAll(_database.mora, mora);
+        batch.insertAll(_database.moraTracking, tracking);
         batch.insert(
           _database.syncMetadata,
           SyncMetadataCompanion.insert(key: _marker),

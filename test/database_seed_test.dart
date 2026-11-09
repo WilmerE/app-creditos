@@ -81,7 +81,7 @@ void main() {
             contains(PlanOption(card.totalInstallments, card.weeklyAmount)),
           );
           final rows = payments.where((p) => p.cardId == card.id).toList()
-            ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
+            ..sort((a, b) => a.scheduledDate!.compareTo(b.scheduledDate!));
           expect(rows, hasLength(card.totalInstallments));
           expect(
             rows.first.scheduledDate,
@@ -93,7 +93,7 @@ void main() {
           );
           if (index + 1 < history.length) {
             expect(
-              rows.last.scheduledDate.isBefore(history[index + 1].startDate),
+              rows.last.scheduledDate!.isBefore(history[index + 1].startDate),
               isTrue,
             );
           }
@@ -102,7 +102,7 @@ void main() {
             final row = rows[i];
             expect(row.isRenewal, index > 0);
             if (i > 0) {
-              final previous = rows[i - 1].scheduledDate;
+              final previous = rows[i - 1].scheduledDate!;
               expect(
                 row.scheduledDate,
                 DateTime(previous.year, previous.month, previous.day + 7),
@@ -113,7 +113,7 @@ void main() {
             if (row.amountPaid == 0) {
               emptyRows++;
             } else {
-              expect(row.scheduledDate.isAfter(today), isFalse);
+              expect(row.scheduledDate!.isAfter(today), isFalse);
               if (row.amountPaid < card.weeklyAmount) {
                 partialRows++;
               } else {
@@ -127,7 +127,8 @@ void main() {
               expect(row.receiptNumber, isNull);
             }
           }
-          if (card.status == CardStatus.paid.name) {
+          if (card.status == CardStatus.paid.name ||
+              card.status == CardStatus.renewal.name) {
             expect(balance, 0);
           } else {
             expect(balance, greaterThan(0));
@@ -135,7 +136,7 @@ void main() {
               expect(
                 rows.any(
                   (row) =>
-                      row.scheduledDate.isBefore(today) &&
+                      row.scheduledDate!.isBefore(today) &&
                       row.amountPaid < card.weeklyAmount,
                 ),
                 isTrue,
@@ -143,7 +144,7 @@ void main() {
             } else {
               expect(
                 rows
-                    .where((row) => row.scheduledDate.isBefore(today))
+                    .where((row) => row.scheduledDate!.isBefore(today))
                     .every((row) => row.amountPaid >= card.weeklyAmount),
                 isTrue,
               );
@@ -222,7 +223,12 @@ void main() {
       'Cliente existente',
     );
     expect(await db.select(db.cardsTable).get(), isEmpty);
-    expect(await db.select(db.syncMetadata).get(), isEmpty);
+    expect(
+      (await db.select(db.syncMetadata).get()).where(
+        (row) => row.key != 'mora_accrual_baseline_v9',
+      ),
+      isEmpty,
+    );
   });
 
   test('refuses orphan phone or payment rows without deleting them', () async {
@@ -242,7 +248,7 @@ void main() {
         .insert(
           PaymentsCompanion.insert(
             id: 'existing',
-            scheduledDate: today,
+            scheduledDate: Value(today),
             balanceAfter: 100,
           ),
         );
@@ -260,7 +266,12 @@ void main() {
     expect(await db.select(db.clientPhones).get(), isEmpty);
     expect(await db.select(db.cardsTable).get(), isEmpty);
     expect(await db.select(db.payments).get(), isEmpty);
-    expect(await db.select(db.syncMetadata).get(), isEmpty);
+    expect(
+      (await db.select(db.syncMetadata).get()).where(
+        (row) => row.key != 'mora_accrual_baseline_v9',
+      ),
+      isEmpty,
+    );
     await db.customStatement('DROP TRIGGER fail_seed');
     expect(await seed.run(now: today), DatabaseSeedResult.inserted);
   });

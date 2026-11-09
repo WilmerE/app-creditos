@@ -629,7 +629,7 @@ class _PlanPreview extends StatelessWidget {
               TableRow(
                 decoration: BoxDecoration(color: color.withValues(alpha: 0.12)),
                 children: [
-                  _cell(dateFormat.format(plan.installments[i].scheduledDate)),
+                  _cell(dateFormat.format(plan.installments[i].scheduledDate!)),
                   _cell(
                     CurrencyFormatter.formatGtq(plan.option.installmentAmount),
                   ),

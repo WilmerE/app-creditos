@@ -21,7 +21,13 @@ abstract interface class CreditCardRepository {
   Future<List<CreditCard>> cardsForClient(String clientId);
 
   Stream<List<PaymentInstallment>> watchInstallments(String cardId);
+  Future<void> accrueMora(String cardId, {DateTime? now});
+  Stream<LateFee> watchMora(String cardId);
 
   /// Persists the edited installments (date, amount, balance, type, receipt).
   Future<void> saveInstallments(List<PaymentInstallment> installments);
+
+  Future<void> addEmptyInstallment(String cardId);
+
+  Future<void> deleteEmptyLastInstallment(String cardId, String installmentId);
 }

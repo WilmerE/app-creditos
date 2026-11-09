@@ -4,6 +4,8 @@ import 'package:injectable/injectable.dart';
 import '../../../../../core/database/app_database.dart';
 import '../../../domain/entities/credit_card.dart';
 import '../../../domain/entities/payment_installment.dart';
+import '../../../domain/use_cases/credit_card_creation.dart';
+import 'mora_local_data_source.dart';
 
 @lazySingleton
 class CreditCardLocalDataSource {
@@ -11,27 +13,39 @@ class CreditCardLocalDataSource {
 
   final AppDatabase _database;
 
-  Future<List<CardBalance>> openCardBalances(String clientId) async {
-    final cards = await (_database.select(
-      _database.cardsTable,
-    )..where((c) => c.clientId.equals(clientId))).get();
-    final balances = <CardBalance>[];
-    for (final row in cards) {
-      final card = _toEntity(row);
-      if (!card.status.isOpen) continue;
-      final paid = await _totalPaid(card.id);
-      balances.add(CardBalance(card, card.totalToPay - paid));
-    }
-    return balances;
-  }
+  Future<List<CardBalance>> openCardBalances(String clientId) =>
+      _database.transaction(() async {
+        final cards = await (_database.select(
+          _database.cardsTable,
+        )..where((c) => c.clientId.equals(clientId))).get();
+        final balances = <CardBalance>[];
+        for (final row in cards) {
+          final card = _toEntity(row);
+          final mora = MoraLocalDataSource(_database);
+          if (card.status.isOpen) await mora.accrue(card.id);
+          final pendingMora = await mora.pending(card.id);
+          if (!card.status.isOpen && pendingMora.isEmpty) continue;
+          final paid = await _totalPaid(card.id);
+          final fee = pendingMora.length * await mora.dailyRate();
+          balances.add(
+            CardBalance(
+              card,
+              (card.totalToPay - paid).clamp(0, double.infinity) +
+                  (pendingMora.isNotEmpty && fee <= 0 ? 0.01 : fee.toDouble()),
+            ),
+          );
+        }
+        return balances;
+      });
 
   Future<Set<String>> clientIdsWithPendingBalance() async {
     final cards = await _database.select(_database.cardsTable).get();
     final ids = <String>{};
     for (final row in cards) {
       final card = _toEntity(row);
-      if (!card.status.isOpen || ids.contains(card.clientId)) continue;
-      if (card.totalToPay - await _totalPaid(card.id) > 0.005) {
+      if (ids.contains(card.clientId)) continue;
+      final balances = await openCardBalances(card.clientId);
+      if (balances.any((balance) => balance.pending > 0.005)) {
         ids.add(card.clientId);
       }
     }
@@ -66,6 +80,9 @@ class CreditCardLocalDataSource {
     return _database.transaction(() async {
       final cards = _database.cardsTable;
       final balances = await openCardBalances(card.clientId);
+      if (balances.any((balance) => balance.pending > 0.005)) {
+        throw const RenewalBlockedException();
+      }
       for (final balance in balances.where((b) => b.pending <= 0.005)) {
         await (_database.update(cards)
               ..where((c) => c.id.equals(balance.card.id)))
@@ -93,7 +110,7 @@ class CreditCardLocalDataSource {
           PaymentsCompanion.insert(
             id: item.id,
             cardId: Value(item.cardId),
-            scheduledDate: item.scheduledDate,
+            scheduledDate: Value(item.scheduledDate),
             amountPaid: Value(item.amountPaid),
             balanceAfter: item.balanceAfter,
             isRenewal: Value(item.isRenewal),
@@ -103,11 +120,13 @@ class CreditCardLocalDataSource {
   }
 
   Future<double> _totalPaid(String cardId) async {
-    final sum = _database.payments.amountPaid.sum();
-    final query = _database.selectOnly(_database.payments)
-      ..addColumns([sum])
-      ..where(_database.payments.cardId.equals(cardId));
-    return await query.map((row) => row.read(sum)).getSingle() ?? 0;
+    final rows = await (_database.select(
+      _database.payments,
+    )..where((row) => row.cardId.equals(cardId))).get();
+    return rows.fold<double>(
+      0,
+      (sum, row) => sum + row.amountPaid - row.moraCents / 100,
+    );
   }
 
   CreditCard _toEntity(CardRow row) => CreditCard(

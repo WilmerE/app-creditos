@@ -23,7 +23,8 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late AppDatabase db;
   late DriftDashboardRepository repository;
-  final today = DateTime(2026, 11, 5, 12);
+  final clock = DateTime.now();
+  final today = DateTime(clock.year, clock.month, clock.day, 12);
 
   setUp(() async {
     db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -48,8 +49,8 @@ void main() {
       totalInstallments: 4,
       payments: payments,
     );
-    final yesterday = DateTime(2026, 11, 4);
-    final tomorrow = DateTime(2026, 11, 6);
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final tomorrow = DateTime(today.year, today.month, today.day + 1);
     final cards = [
       card('a', CardStatus.active, [
         DashboardPayment(
@@ -98,6 +99,87 @@ void main() {
     expect(nextDay.visibleCards.map((card) => card.id), ['a']);
   });
 
+  test('renewal filter excludes any card with a pending balance', () {
+    final card = DashboardCard(
+      id: 'renewal-with-debt',
+      clientId: 'client',
+      clientName: 'Cliente',
+      alias: null,
+      photoPath: null,
+      status: CardStatus.renewal,
+      weeklyAmount: 125,
+      totalInstallments: 4,
+      payments: [
+        DashboardPayment(
+          scheduledDate: today,
+          updatedAt: today,
+          amountPaid: 125,
+        ),
+      ],
+    );
+    final state = DashboardState(
+      today: today,
+      cards: [card],
+      filter: DashboardFilter.renewal,
+    );
+    expect(state.count(CardStatus.renewal), 0);
+    expect(state.visibleCards, isEmpty);
+  });
+
+  test('manual rows do not inflate the scheduled daily projection', () {
+    final state = DashboardState(
+      today: today,
+      cards: [
+        DashboardCard(
+          id: 'card',
+          clientId: 'client',
+          clientName: 'Cliente',
+          alias: null,
+          photoPath: null,
+          status: CardStatus.active,
+          weeklyAmount: 125,
+          totalInstallments: 4,
+          payments: [
+            DashboardPayment(
+              scheduledDate: today,
+              updatedAt: today,
+              amountPaid: 20,
+              isManual: true,
+            ),
+          ],
+        ),
+      ],
+      filter: DashboardFilter.cash,
+    );
+    expect(state.projectedToday, 0);
+    expect(state.estimatedPaidToday, 20);
+    expect(state.visibleCards, hasLength(1));
+  });
+
+  test(
+    'repository maps paid-off cards to renewal and debt cards out of it',
+    () async {
+      final card = (await repository.watchCards().first).firstWhere(
+        (card) => card.status == CardStatus.active,
+      );
+      await (db.update(db.cardsTable)..where((row) => row.id.equals(card.id)))
+          .write(const CardsTableCompanion(status: Value('renewal')));
+      final withDebt = (await repository.watchCards().first).firstWhere(
+        (candidate) => candidate.id == card.id,
+      );
+      expect(withDebt.pendingBalance, greaterThan(0));
+      expect(withDebt.status, anyOf(CardStatus.active, CardStatus.debtor));
+
+      await (db.update(db.payments)..where((row) => row.cardId.equals(card.id)))
+          .write(PaymentsCompanion(amountPaid: Value(card.weeklyAmount)));
+      final settled = (await repository.watchCards().first).firstWhere(
+        (candidate) => candidate.id == card.id,
+      );
+      expect(settled.pendingBalance, 0);
+      expect(settled.status, CardStatus.renewal);
+    },
+  );
+
   test(
     'seeded dashboard has correct filters, balance and daily amounts',
     () async {
@@ -119,9 +201,9 @@ void main() {
             card.payments
                     .where(
                       (p) =>
-                          p.scheduledDate.year == today.year &&
-                          p.scheduledDate.month == today.month &&
-                          p.scheduledDate.day == today.day,
+                          p.scheduledDate?.year == today.year &&
+                          p.scheduledDate?.month == today.month &&
+                          p.scheduledDate?.day == today.day,
                     )
                     .length *
                 card.weeklyAmount,
@@ -159,9 +241,9 @@ void main() {
           predicate<DashboardCard>(
             (card) => card.payments.any(
               (p) =>
-                  p.scheduledDate.year == today.year &&
-                      p.scheduledDate.month == today.month &&
-                      p.scheduledDate.day == today.day ||
+                  p.scheduledDate?.year == today.year &&
+                      p.scheduledDate?.month == today.month &&
+                      p.scheduledDate?.day == today.day ||
                   p.amountPaid > 0 &&
                       p.updatedAt.toLocal().year == today.year &&
                       p.updatedAt.toLocal().month == today.month &&
@@ -221,6 +303,10 @@ void main() {
     final active = cards.firstWhere((card) => card.status == CardStatus.active);
     await expectLater(
       repository.changeStatus(active.id, CardStatus.paid),
+      throwsStateError,
+    );
+    await expectLater(
+      repository.changeStatus(active.id, CardStatus.renewal),
       throwsStateError,
     );
     expect(
@@ -384,7 +470,11 @@ void main() {
           await tester.pumpAndSettle();
         }
         await tester.tap(details);
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump(const Duration(seconds: 1));
         expect(find.byType(CardDetailScreen), findsOneWidget);
         expect(
           tester.widget<CardDetailScreen>(find.byType(CardDetailScreen)).cardId,

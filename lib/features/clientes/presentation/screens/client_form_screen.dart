@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../domain/entities/client.dart';
 import '../bloc/client_bloc.dart';
+import '../widgets/client_location_picker_dialog.dart';
 import '../widgets/client_photo_picker.dart';
 
 class ClientFormScreen extends StatefulWidget {
@@ -27,6 +28,8 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
   late final TextEditingController _alias;
   late final List<TextEditingController> _phones;
   String? _pendingPhoto;
+  double? _latitude;
+  double? _longitude;
   bool _removePhoto = false;
 
   bool get _isEditing => widget.client != null;
@@ -40,6 +43,8 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
     _dpi = TextEditingController(text: c?.dpi);
     _dpiFolder = TextEditingController(text: c?.dpiFolder);
     _alias = TextEditingController(text: c?.alias);
+    _latitude = c?.latitude;
+    _longitude = c?.longitude;
     _phones = [
       for (final phone in c?.phones ?? const <String>[])
         TextEditingController(text: phone),
@@ -84,6 +89,8 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
       dpiFolder: _nullIfEmpty(_dpiFolder.text),
       alias: _nullIfEmpty(_alias.text),
       photoPath: _removePhoto ? null : existing?.photoPath,
+      latitude: _latitude,
+      longitude: _longitude,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     );
@@ -175,6 +182,45 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
                           ? 'La dirección es obligatoria'
                           : null,
                     ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final location =
+                            await showDialog<
+                              ({double latitude, double longitude})
+                            >(
+                              context: context,
+                              builder: (_) => ClientLocationPickerDialog(
+                                initialLatitude: _latitude,
+                                initialLongitude: _longitude,
+                              ),
+                            );
+                        if (location != null && mounted) {
+                          setState(() {
+                            _latitude = location.latitude;
+                            _longitude = location.longitude;
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.location_on_outlined),
+                      label: Text(
+                        _latitude == null || _longitude == null
+                            ? 'Seleccionar ubicación en el mapa'
+                            : 'Ubicación: ${_latitude!.toStringAsFixed(6)}, ${_longitude!.toStringAsFixed(6)}',
+                      ),
+                    ),
+                    if (_latitude != null && _longitude != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setState(() {
+                            _latitude = null;
+                            _longitude = null;
+                          }),
+                          icon: const Icon(Icons.clear),
+                          label: const Text('Quitar ubicación'),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     Text(
                       'Teléfonos',

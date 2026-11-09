@@ -9,6 +9,7 @@ class EnterpriseConfig {
     this.showNit = false,
     this.showEmail = false,
     this.showBankAccount = false,
+    this.mora = 20,
   });
 
   final String name;
@@ -20,4 +21,5 @@ class EnterpriseConfig {
   final bool showNit;
   final bool showEmail;
   final bool showBankAccount;
+  final int mora;
 }

@@ -71,7 +71,7 @@ class CreditCardCreation {
       deliveredAmount: requestedAmount,
       totalInstallments: plan.option.installments,
       weeklyAmount: plan.option.installmentAmount,
-      status: isRenewal ? CardStatus.renewal : CardStatus.active,
+      status: CardStatus.active,
       colorHex: colorHex,
       startDate: plan.startDate,
       createdAt: now ?? DateTime.now(),

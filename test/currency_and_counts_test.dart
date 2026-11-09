@@ -1,11 +1,11 @@
 import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:creditos/core/database/app_database.dart';
 import 'package:creditos/core/utils/currency_formatter.dart';
 import 'package:creditos/features/clientes/data/datasources/client_local_datasource.dart';
 import 'package:creditos/features/clientes/domain/entities/client.dart';
-import 'package:creditos/features/cobros_tarjetas/data/datasources/local/credit_card_local_data_source.dart';
 import 'package:creditos/features/cobros_tarjetas/domain/entities/credit_card.dart';
 
 void main() {
@@ -19,7 +19,6 @@ void main() {
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final clients = ClientLocalDataSource(db);
-    final cards = CreditCardLocalDataSource(db);
     final now = DateTime(2026, 11, 4);
     await clients.insert(
       Client(
@@ -31,21 +30,22 @@ void main() {
         updatedAt: now,
       ),
     );
-    Future<void> add(String id, CardStatus status) => cards.createCard(
-      CreditCard(
-        id: id,
-        clientId: 'c1',
-        requestedAmount: 500,
-        deliveredAmount: 500,
-        totalInstallments: 6,
-        weeklyAmount: 125,
-        status: status,
-        colorHex: '#800020',
-        startDate: now,
-        createdAt: now,
-      ),
-      const [],
-    );
+    Future<void> add(String id, CardStatus status) => db
+        .into(db.cardsTable)
+        .insert(
+          CardsTableCompanion.insert(
+            id: id,
+            clientId: 'c1',
+            requestedAmount: 500,
+            deliveredAmount: 500,
+            totalInstallments: 6,
+            weeklyAmount: 125,
+            status: Value(status.name),
+            startDate: now,
+            createdAt: now,
+          ),
+        )
+        .then((_) {});
     await add('a', CardStatus.paid);
     await add('b', CardStatus.active);
     await add('c', CardStatus.renewal);

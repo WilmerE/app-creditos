@@ -76,3 +76,51 @@
 - **Cambios realizados:** Panel reactivo Drift con filtros por estado, caja estimada, navegación a tarjeta y cambios de estado validados transaccionalmente.
 - **Pendientes:** Para una caja exacta se necesita un historial de movimientos de abono con fecha e importe.
 - **Contexto técnico:** Los estados existentes son manuales; la cifra abonada diaria se aproxima a partir de las últimas ediciones, no es un dato contable.
+
+## [Estados de tarjetas y caja diaria] - 2026-11-08
+- **Módulos modificados:** `features/cobros_tarjetas`, `features/dashboard` y `core/database`.
+- **Cambios realizados:** El saldo cero pone tarjetas abiertas en renovación; los pagos actualizan el estado según cuotas vencidas y saldo; emitir una tarjeta liquida las renovaciones anteriores y deja la nueva activa. La bandeja del dashboard excluye saldos pendientes. La caja diaria usa `updated_at` para abonos editados hoy.
+- **Pendientes:** Ninguno.
+- **Contexto técnico:** El abono diario sigue siendo una aproximación porque no existe historial de movimientos de caja.
+
+## [Filas manuales y recepción de pagos] - 2026-11-08
+- **Módulos modificados:** `core/database`, `features/cobros_tarjetas` y `features/dashboard`.
+- **Cambios realizados:** Filas manuales vacías ordenadas al final, eliminación transaccional solo de la última fila sin datos y fecha de primera recepción en `payments.created_at`. Las filas manuales no alteran la proyección del plan.
+- **Pendientes:** Ninguno.
+- **Contexto técnico:** Migración v6→v7; las fechas de abonos anteriores se estiman con la fecha programada y se identifican como estimadas. No se conserva historial de cambios de importe.
+
+## [Mora informativa de tarjetas] - 2026-11-08
+- **Módulos modificados:** `features/cobros_tarjetas` (entidad, Cubit y detalle).
+- **Cambios realizados:** Cálculo de Q20 diarios desde la cuota original pendiente más antigua, banner y desglose de capital y mora; actualización automática al cambiar el día.
+- **Pendientes:** Ninguno.
+- **Contexto técnico:** La mora es informativa y desaparece al saldar la cuota; no modifica el capital ni se registra como pago. Las filas manuales no generan vencimientos.
+
+## [Preparación de mora persistente y bloqueo de edición]
+- **Módulos modificados:** `core/database`, `features/enterprise` y `features/cobros_tarjetas`.
+- **Cambios realizados:** Esquema v8 con tabla `mora` y tarifa empresarial; bloqueo local de edición de abonos a las 24 horas desde `created_at`, incluidas fechas estimadas.
+- **Pendientes:** Generación y cobro persistente de mora, prioridad de pagos, límites de abono, detalle de atrasos, seed y auditoría de correcciones. La tarifa aún no está disponible en la interfaz ni afecta el cálculo informativo anterior.
+- **Contexto técnico:** No se eliminó la base existente. El bloqueo local no impide manipular directamente SQLite o el reloj del dispositivo.
+
+## [Validaciones locales de tarjetas y saldos]
+- **Cambios realizados:** El repositorio recalcula los saldos RESTA en lugar de aceptar el saldo enviado por la interfaz, rechaza importes negativos o no finitos y comprueba la deuda de capital nuevamente al crear una tarjeta dentro de la transacción.
+- **Pendientes:** La comprobación de renovación todavía no incluye la mora persistente; la prioridad de cobro y el límite de deuda total siguen sin implementarse.
+
+## [Mora persistente y prioridad de cobro]
+- **Módulos modificados:** base Drift, cobros y tarjetas, configuración empresarial, dashboard y datos de prueba.
+- **Cambios realizados:** Esquema v9 con control de días, asignaciones reversibles y registro de cambios; generación idempotente desde la última revisión; tarifa configurable; pago de días completos de mora antes del capital; límite de deuda; detalle de fechas; renovación bloqueada por mora; seed con atrasos.
+- **Contexto técnico:** La migración no genera atrasos anteriores a ella. Los pagos anteriores se consideran capital. La tarifa vigente afecta días pendientes, mientras que las reversiones usan el importe originalmente aplicado. La caja diaria sigue siendo una estimación; el bloqueo y la auditoría locales no evitan manipulación directa de SQLite o del reloj.
+
+## [Clientes: ubicacion, fotografia y recepcion] - 2026-11-08
+- **Modulos modificados:** `core/database`, `features/clientes`, `features/cobros_tarjetas` y `windows/flutter`.
+- **Cambios realizados:** Selector de Google Maps para clientes en Windows mediante WebView2; permite elegir o arrastrar un pin y guardar latitud y longitud localmente. Migracion Drift v9->v10 con coordenadas opcionales en `clients`. La foto de cliente admite recorte circular, zoom y desplazamiento. Filas manuales nacen con la fecha actual, ofrecen selector de calendario y rechazan fechas pasadas. Los abonos con mora aceptan desde un dia completo, aplican primero los dias pendientes mas antiguos y destinan el remanente al capital.
+- **Contexto tecnico:** La clave se inyecta al compilar desde `google_maps.local.json` mediante `--dart-define-from-file`; el archivo se excluye de Git. El mapa requiere conexion, Maps JavaScript API habilitada y WebView2 Runtime en Windows. Coordenadas nulas conservan compatibilidad con clientes existentes; la migracion no requiere seed.
+
+## [Ubicacion actual al elegir cliente] - 2026-11-08
+- **Modulos modificados:** `features/clientes`, configuracion Android y permisos de macOS.
+- **Cambios realizados:** El selector de mapa permite solicitar la ubicación actual de forma explícita, recentrar el mapa y colocar el pin; muestra progreso y mensajes cuando los servicios o permisos no están disponibles. Se declararon permisos de ubicación en primer plano para Android y permiso con uso mientras se utiliza la app en macOS.
+- **Contexto tecnico:** La ubicación se obtiene con `geolocator` y requiere permiso del usuario y servicios de ubicación activos. No requiere habilitar una API adicional en Google Cloud; la clave de Maps sigue siendo necesaria para cargar el mapa. El selector de Google Maps existente continúa limitado a Windows.
+
+## [Busqueda en listas del dashboard] - 2026-11-08
+- **Modulos modificados:** `features/dashboard/presentation`.
+- **Cambios realizados:** Se agregó un campo de búsqueda instantánea sobre la lista de tarjetas del dashboard; filtra por nombre de cliente o referencia/alias, ignora mayúsculas y acentos, y permite limpiar la búsqueda.
+- **Contexto tecnico:** El filtrado se aplica a las tarjetas visibles del filtro actual y no altera los datos ni el estado financiero.

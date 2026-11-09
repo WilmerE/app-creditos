@@ -22,16 +22,25 @@ class PaymentInstallment extends Equatable {
     this.type = PaymentType.cash,
     this.receiptNumber,
     this.isRenewal = false,
+    this.createdAt,
+    this.createdAtEstimated = false,
+    this.isManual = false,
+    this.moraCents = 0,
   });
 
   final String id;
   final String cardId;
-  final DateTime scheduledDate;
+  final DateTime? scheduledDate;
   final double amountPaid;
   final double balanceAfter;
   final PaymentType type;
   final String? receiptNumber;
   final bool isRenewal;
+  final DateTime? createdAt;
+  final bool createdAtEstimated;
+  final bool isManual;
+  final int moraCents;
+  double get principalPaid => amountPaid - moraCents / 100;
 
   @override
   List<Object?> get props => [
@@ -43,6 +52,10 @@ class PaymentInstallment extends Equatable {
     type,
     receiptNumber,
     isRenewal,
+    createdAt,
+    createdAtEstimated,
+    isManual,
+    moraCents,
   ];
 
   PaymentInstallment copyWith({
@@ -65,6 +78,10 @@ class PaymentInstallment extends Equatable {
           ? null
           : receiptNumber ?? this.receiptNumber,
       isRenewal: isRenewal ?? this.isRenewal,
+      createdAt: createdAt,
+      createdAtEstimated: createdAtEstimated,
+      isManual: isManual,
+      moraCents: moraCents,
     );
   }
 }

@@ -104,10 +104,20 @@ void main() {
       "INSERT INTO sync_metadata (key) VALUES ('preserved')",
     );
     await db.customStatement('DROP TABLE enterprise_configs');
+    await db.customStatement('DROP TABLE mora');
+    await db.customStatement('DROP TABLE mora_tracking');
+    await db.customStatement('DROP TABLE mora_applications');
+    await db.customStatement('DROP TABLE payment_changes');
+    await db.customStatement('ALTER TABLE payments DROP COLUMN mora_cents');
     await db.customStatement('PRAGMA user_version = 5');
     await db.close();
     db = AppDatabase.forTesting(NativeDatabase(file));
-    expect((await db.select(db.syncMetadata).get()).single.key, 'preserved');
+    expect(
+      (await db.select(db.syncMetadata).get()).any(
+        (row) => row.key == 'preserved',
+      ),
+      isTrue,
+    );
     final repository = EnterpriseConfigRepository(db);
     await repository.save(const EnterpriseConfig(name: 'Migrada'));
     expect((await repository.watch().first).name, 'Migrada');

@@ -53,6 +53,8 @@ class ClientLocalDataSource {
           dpiFolder: Value(client.dpiFolder),
           alias: Value(client.alias),
           photoPath: Value(client.photoPath),
+          latitude: Value(client.latitude),
+          longitude: Value(client.longitude),
           updatedAt: Value(client.updatedAt),
         ),
       );
@@ -130,6 +132,8 @@ class ClientLocalDataSource {
             dpiFolder: row.dpiFolder,
             alias: row.alias,
             photoPath: row.photoPath,
+            latitude: row.latitude,
+            longitude: row.longitude,
             activeCardsCount: openCards[row.id]?.length ?? 0,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
@@ -147,6 +151,8 @@ class ClientLocalDataSource {
       dpiFolder: Value(client.dpiFolder),
       alias: Value(client.alias),
       photoPath: Value(client.photoPath),
+      latitude: Value(client.latitude),
+      longitude: Value(client.longitude),
       createdAt: client.createdAt,
       updatedAt: client.updatedAt,
     );

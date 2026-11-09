@@ -5,11 +5,15 @@ class DashboardPayment {
     required this.scheduledDate,
     required this.updatedAt,
     required this.amountPaid,
+    this.isManual = false,
+    this.moraPaid = 0,
   });
 
-  final DateTime scheduledDate;
+  final DateTime? scheduledDate;
   final DateTime updatedAt;
   final double amountPaid;
+  final bool isManual;
+  final double moraPaid;
 }
 
 class DashboardCard {
@@ -23,6 +27,7 @@ class DashboardCard {
     required this.weeklyAmount,
     required this.totalInstallments,
     required this.payments,
+    this.outstandingMora = 0,
   });
 
   final String id;
@@ -34,18 +39,23 @@ class DashboardCard {
   final double weeklyAmount;
   final int totalInstallments;
   final List<DashboardPayment> payments;
+  final double outstandingMora;
 
   double get pendingBalance =>
       (weeklyAmount * totalInstallments -
               payments.fold<double>(
                 0,
-                (sum, payment) => sum + payment.amountPaid,
+                (sum, payment) => sum + payment.amountPaid - payment.moraPaid,
               ))
-          .clamp(0, double.infinity);
+          .clamp(0, double.infinity) +
+      outstandingMora;
 
-  int get remainingInstallments => pendingBalance <= 0.005
+  double get capitalPending =>
+      (pendingBalance - outstandingMora).clamp(0, double.infinity);
+
+  int get remainingInstallments => capitalPending <= 0.005
       ? 0
-      : (pendingBalance / weeklyAmount).ceil().clamp(0, totalInstallments);
+      : (capitalPending / weeklyAmount).ceil().clamp(0, totalInstallments);
 }
 
 abstract interface class DashboardRepository {

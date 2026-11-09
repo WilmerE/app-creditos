@@ -134,7 +134,7 @@ class DashboardView extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Los estados se muestran tal como están guardados; no cambian automáticamente al registrar pagos.',
+                    'Al liquidar el saldo, la tarjeta pasa a En renovación; al emitir una nueva, la anterior queda Pagada.',
                   ),
                   const SizedBox(height: 24),
                   Text(switch (state.filter) {
@@ -145,25 +145,101 @@ class DashboardView extends StatelessWidget {
                     DashboardFilter.cash => 'Cuotas programadas o editadas hoy',
                   }, style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 12),
-                  if (state.visibleCards.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(
-                        child: Text('No hay tarjetas para este filtro.'),
-                      ),
-                    )
-                  else
-                    for (final card in state.visibleCards)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _DashboardCardTile(card: card),
-                      ),
+                  _DashboardCardsList(cards: state.visibleCards),
                 ],
               );
             },
           );
         },
       ),
+    );
+  }
+}
+
+class _DashboardCardsList extends StatefulWidget {
+  const _DashboardCardsList({required this.cards});
+
+  final List<DashboardCard> cards;
+
+  @override
+  State<_DashboardCardsList> createState() => _DashboardCardsListState();
+}
+
+class _DashboardCardsListState extends State<_DashboardCardsList> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  String _normalize(String value) => value
+      .toLowerCase()
+      .replaceAll('á', 'a')
+      .replaceAll('é', 'e')
+      .replaceAll('í', 'i')
+      .replaceAll('ó', 'o')
+      .replaceAll('ú', 'u')
+      .replaceAll('ü', 'u')
+      .replaceAll('ñ', 'n')
+      .trim();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _normalize(_query);
+    final filteredCards = widget.cards
+        .where((card) {
+          if (query.isEmpty) return true;
+          return _normalize(card.clientName).contains(query) ||
+              _normalize(card.alias ?? '').contains(query);
+        })
+        .toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _searchController,
+          onChanged: (value) => setState(() => _query = value),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Buscar por cliente o referencia',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Limpiar búsqueda',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (filteredCards.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Text(
+                widget.cards.isEmpty
+                    ? 'No hay tarjetas para este filtro.'
+                    : 'No se encontraron tarjetas con esa búsqueda.',
+              ),
+            ),
+          )
+        else
+          for (final card in filteredCards)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _DashboardCardTile(card: card),
+            ),
+      ],
     );
   }
 }

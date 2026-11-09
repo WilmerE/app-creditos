@@ -12,6 +12,8 @@ class Client extends Equatable {
     this.dpiFolder,
     this.alias,
     this.photoPath,
+    this.latitude,
+    this.longitude,
     this.activeCardsCount = 0,
   });
 
@@ -23,6 +25,8 @@ class Client extends Equatable {
   final String? dpiFolder;
   final String? alias;
   final String? photoPath;
+  final double? latitude;
+  final double? longitude;
   final int activeCardsCount;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -38,6 +42,9 @@ class Client extends Equatable {
     String? alias,
     String? photoPath,
     bool clearPhotoPath = false,
+    double? latitude,
+    double? longitude,
+    bool clearLocation = false,
     int? activeCardsCount,
     DateTime? updatedAt,
   }) {
@@ -50,6 +57,8 @@ class Client extends Equatable {
       dpiFolder: dpiFolder ?? this.dpiFolder,
       alias: alias ?? this.alias,
       photoPath: clearPhotoPath ? null : photoPath ?? this.photoPath,
+      latitude: clearLocation ? null : latitude ?? this.latitude,
+      longitude: clearLocation ? null : longitude ?? this.longitude,
       activeCardsCount: activeCardsCount ?? this.activeCardsCount,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -66,6 +75,8 @@ class Client extends Equatable {
     dpiFolder,
     alias,
     photoPath,
+    latitude,
+    longitude,
     activeCardsCount,
     createdAt,
     updatedAt,

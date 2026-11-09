@@ -51,6 +51,7 @@ class _ConfigFormState extends State<_ConfigForm> {
   late final _nit = TextEditingController(text: widget.initial.nit);
   late final _email = TextEditingController(text: widget.initial.email);
   late final _bank = TextEditingController(text: widget.initial.bankAccount);
+  late final _mora = TextEditingController(text: '${widget.initial.mora}');
   late bool _showPhone = widget.initial.showPhone;
   late bool _showNit = widget.initial.showNit;
   late bool _showEmail = widget.initial.showEmail;
@@ -64,6 +65,7 @@ class _ConfigFormState extends State<_ConfigForm> {
     _nit.dispose();
     _email.dispose();
     _bank.dispose();
+    _mora.dispose();
     super.dispose();
   }
 
@@ -82,6 +84,7 @@ class _ConfigFormState extends State<_ConfigForm> {
           showNit: _showNit,
           showEmail: _showEmail,
           showBankAccount: _showBank,
+          mora: int.parse(_mora.text.trim()),
         ),
       );
       if (!mounted) return;
@@ -164,6 +167,17 @@ class _ConfigFormState extends State<_ConfigForm> {
                 _bank,
                 _showBank,
                 (v) => setState(() => _showBank = v),
+              ),
+              TextFormField(
+                controller: _mora,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Mora diaria (Q)'),
+                validator: (value) {
+                  final amount = int.tryParse(value?.trim() ?? '');
+                  return amount == null || amount <= 0
+                      ? 'Ingrese un valor entero mayor que cero.'
+                      : null;
+                },
               ),
               const SizedBox(height: 16),
               FilledButton(

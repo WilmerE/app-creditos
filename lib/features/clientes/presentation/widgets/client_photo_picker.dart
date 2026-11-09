@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'client_avatar.dart';
+import 'client_photo_crop_dialog.dart';
 
 /// Circular photo preview with a floating edit button. Offers the camera only
 /// where the platform supports it (phones/tablets) and gallery/file otherwise.
@@ -32,14 +33,20 @@ class ClientPhotoPicker extends StatelessWidget {
   bool get _hasPhoto =>
       (pendingPhotoPath ?? currentPhotoPath)?.isNotEmpty ?? false;
 
-  Future<void> _pick(ImageSource source) async {
+  Future<void> _pick(BuildContext context, ImageSource source) async {
     try {
       final file = await _imagePicker.pickImage(
         source: source,
         maxWidth: 1024,
         imageQuality: 85,
       );
-      if (file != null) onPicked(file.path);
+      if (file == null || !context.mounted) return;
+      final croppedPath = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => ClientPhotoCropDialog(imagePath: file.path),
+      );
+      if (croppedPath != null) onPicked(croppedPath);
     } on Object {
       // Permission denied or picker cancelled by the platform.
     }
@@ -76,11 +83,12 @@ class ClientPhotoPicker extends StatelessWidget {
         ),
       ),
     );
+    if (!context.mounted) return;
     switch (action) {
       case 'camera':
-        await _pick(ImageSource.camera);
+        await _pick(context, ImageSource.camera);
       case 'gallery':
-        await _pick(ImageSource.gallery);
+        await _pick(context, ImageSource.gallery);
       case 'remove':
         onRemoved?.call();
     }
