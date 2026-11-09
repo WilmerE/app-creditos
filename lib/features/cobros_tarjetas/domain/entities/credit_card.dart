@@ -53,6 +53,7 @@ class CreditCard extends Equatable {
     required this.colorHex,
     required this.startDate,
     required this.createdAt,
+    this.folderId,
   });
 
   final String id;
@@ -65,6 +66,7 @@ class CreditCard extends Equatable {
   final String colorHex;
   final DateTime startDate;
   final DateTime createdAt;
+  final int? folderId;
 
   double get totalToPay => totalInstallments * weeklyAmount;
 
@@ -80,6 +82,7 @@ class CreditCard extends Equatable {
     colorHex,
     startDate,
     createdAt,
+    folderId,
   ];
 }
 

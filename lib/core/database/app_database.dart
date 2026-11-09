@@ -44,6 +44,14 @@ class ClientPhones extends Table {
   IntColumn get position => integer().withDefault(const Constant(0))();
 }
 
+@DataClassName('CapitalGroupRow')
+class CapitalGroups extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()();
+  TextColumn get description => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
 @DataClassName('CardRow')
 class CardsTable extends Table {
   @override
@@ -51,6 +59,11 @@ class CardsTable extends Table {
 
   TextColumn get id => text()();
   TextColumn get clientId => text().references(ClientsTable, #id)();
+  IntColumn get folderId => integer().nullable().references(
+    CapitalGroups,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
   RealColumn get requestedAmount => real()();
   RealColumn get deliveredAmount => real()();
   IntColumn get totalInstallments => integer()();
@@ -130,6 +143,7 @@ class PaymentChanges extends Table {
     Payments,
     ClientsTable,
     ClientPhones,
+    CapitalGroups,
     CardsTable,
     EnterpriseConfigs,
     Mora,
@@ -144,7 +158,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -228,6 +242,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 10) {
         await migrator.addColumn(clientsTable, clientsTable.latitude);
         await migrator.addColumn(clientsTable, clientsTable.longitude);
+      }
+      if (from < 11) {
+        await migrator.createTable(capitalGroups);
+        await migrator.addColumn(cardsTable, cardsTable.folderId);
       }
     },
   );

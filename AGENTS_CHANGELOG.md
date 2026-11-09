@@ -140,3 +140,9 @@
 - **Cambios realizados:** Se agregó el acceso del dashboard a cuotas con vencimiento hoy y grupos de Pendientes/Pagados; esta sección aparece primero y abre seleccionada por defecto. Los abonos parciales permanecen en Pendientes y muestran abonado a capital y resto de la cuota; las cuotas manuales no se incluyen.
 - **Contexto tecnico:** La clasificación compara el capital aplicado a la cuota (`amountPaid - moraPaid`) con el importe semanal. Se filtra por fecha calendario local programada; la mora/deuda no se cambia por estar pendiente en el mismo día del vencimiento.
 - **Actualización:** En el grupo Pendientes se agregaron acciones para llamar y abrir el chat de WhatsApp usando el teléfono principal del cliente; sin teléfono registrado, las acciones quedan deshabilitadas.
+
+## [Carpetas locales de capital] - 2026-11-08
+- **Modulos modificados:** `core/database`, `features/capital_groups`, creación de tarjetas y dashboard.
+- **Cambios realizados:** Drift v11 incorpora `capital_groups` y `cards.folder_id` opcional. Se agregó gestión local para crear, editar y eliminar grupos; al eliminar uno, sus tarjetas vuelven a Capital Principal. La creación permite asignar una tarjeta a una carpeta. El selector del dashboard filtra los conteos, cobros de hoy, caja y listas por la carpeta seleccionada; abre en Capital Principal.
+- **Contexto tecnico:** Tarjetas anteriores y seed conservan `folder_id = NULL` y pertenecen a Capital Principal. No se consolida información entre carpetas ni se altera el cálculo de cobros, mora, bloqueo de edición o renovación.
+- **Actualización:** En creación de tarjeta, el selector de capital se movió al inicio y ahora requiere selección explícita, incluyendo Capital Principal. Guardar permanece deshabilitado y muestra requisitos pendientes hasta que cliente, plan, fechas y capital estén completos.

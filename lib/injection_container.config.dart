@@ -12,6 +12,12 @@
 
 import 'package:creditos/core/database/app_database.dart' as _i331;
 import 'package:creditos/core/database/transaction_runner.dart' as _i841;
+import 'package:creditos/features/capital_groups/data/repositories/drift_capital_group_repository.dart'
+    as _i799;
+import 'package:creditos/features/capital_groups/domain/repositories/capital_group_repository.dart'
+    as _i255;
+import 'package:creditos/features/capital_groups/domain/use_cases/manage_capital_groups.dart'
+    as _i414;
 import 'package:creditos/features/clientes/data/datasources/client_local_datasource.dart'
     as _i770;
 import 'package:creditos/features/clientes/data/repositories/client_repository_impl.dart'
@@ -54,6 +60,9 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i915.ClientPhotoStorage(),
     );
     gh.lazySingleton<_i331.AppDatabase>(() => appModule.database);
+    gh.lazySingleton<_i255.CapitalGroupRepository>(
+      () => _i799.DriftCapitalGroupRepository(gh<_i331.AppDatabase>()),
+    );
     gh.lazySingleton<_i841.TransactionRunner>(
       () => _i841.DriftTransactionRunner(gh<_i331.AppDatabase>()),
     );
@@ -74,6 +83,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.factory<_i858.ClientBloc>(
       () => _i858.ClientBloc(gh<_i743.ClientRepository>()),
+    );
+    gh.factory<_i414.ManageCapitalGroups>(
+      () => _i414.ManageCapitalGroups(gh<_i255.CapitalGroupRepository>()),
     );
     gh.lazySingleton<_i112.CreditCardRepository>(
       () => _i478.CreditCardRepositoryImpl(
@@ -102,6 +114,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i743.ClientRepository>(),
         gh<_i313.CreditCardCreation>(),
         gh<_i390.CreateCardWithNewClient>(),
+        capitalGroupRepository: gh<_i255.CapitalGroupRepository>(),
       ),
     );
     return this;

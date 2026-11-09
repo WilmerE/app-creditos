@@ -111,6 +111,7 @@ class CreditCardLocalDataSource {
             CardsTableCompanion.insert(
               id: card.id,
               clientId: card.clientId,
+              folderId: Value(card.folderId),
               requestedAmount: card.requestedAmount,
               deliveredAmount: card.deliveredAmount,
               totalInstallments: card.totalInstallments,
@@ -159,5 +160,6 @@ class CreditCardLocalDataSource {
     colorHex: row.colorHex,
     startDate: row.startDate,
     createdAt: row.createdAt,
+    folderId: row.folderId,
   );
 }

@@ -131,6 +131,7 @@ class DriftDashboardRepository implements DashboardRepository {
               alias: client.alias,
               photoPath: client.photoPath,
               primaryPhone: clientPhones.isEmpty ? null : clientPhones.first,
+              folderId: card.folderId,
               status: storedStatus.forBalance(
                 pendingBalance: pendingBalance,
                 hasOverdueInstallment: hasOverdueInstallment,

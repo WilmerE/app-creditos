@@ -4,6 +4,8 @@ import 'package:injectable/injectable.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/utils/date_helpers.dart';
+import '../../../capital_groups/domain/entities/capital_group.dart';
+import '../../../capital_groups/domain/repositories/capital_group_repository.dart';
 import '../../../clientes/domain/entities/client.dart';
 import '../../../clientes/domain/repositories/client_repository.dart';
 import '../../domain/services/payment_plan_calculator.dart';
@@ -69,6 +71,9 @@ class CardCreationState extends Equatable {
     this.status = CardCreationStatus.loading,
     this.clients = const [],
     this.blockedClientIds = const {},
+    this.capitalGroups = const [],
+    this.selectedFolderId,
+    this.capitalSelected = false,
     this.mode = ClientMode.existing,
     this.query = '',
     this.filter = ClientCardFilter.all,
@@ -90,6 +95,9 @@ class CardCreationState extends Equatable {
   final CardCreationStatus status;
   final List<Client> clients;
   final Set<String> blockedClientIds;
+  final List<CapitalGroup> capitalGroups;
+  final int? selectedFolderId;
+  final bool capitalSelected;
   final ClientMode mode;
   final String query;
   final ClientCardFilter filter;
@@ -139,6 +147,7 @@ class CardCreationState extends Equatable {
       hasValidClient &&
       plan != null &&
       datesValid &&
+      capitalSelected &&
       status != CardCreationStatus.saving;
 
   bool get datesValid =>
@@ -150,6 +159,10 @@ class CardCreationState extends Equatable {
     CardCreationStatus? status,
     List<Client>? clients,
     Set<String>? blockedClientIds,
+    List<CapitalGroup>? capitalGroups,
+    int? selectedFolderId,
+    bool clearSelectedFolder = false,
+    bool? capitalSelected,
     ClientMode? mode,
     String? query,
     ClientCardFilter? filter,
@@ -170,6 +183,11 @@ class CardCreationState extends Equatable {
       status: status ?? this.status,
       clients: clients ?? this.clients,
       blockedClientIds: blockedClientIds ?? this.blockedClientIds,
+      capitalGroups: capitalGroups ?? this.capitalGroups,
+      selectedFolderId: clearSelectedFolder
+          ? null
+          : selectedFolderId ?? this.selectedFolderId,
+      capitalSelected: capitalSelected ?? this.capitalSelected,
       mode: mode ?? this.mode,
       query: query ?? this.query,
       filter: filter ?? this.filter,
@@ -192,6 +210,9 @@ class CardCreationState extends Equatable {
     status,
     clients,
     blockedClientIds,
+    capitalGroups,
+    selectedFolderId,
+    capitalSelected,
     mode,
     query,
     filter,
@@ -211,8 +232,12 @@ class CardCreationState extends Equatable {
 
 @injectable
 class CardCreationCubit extends Cubit<CardCreationState> {
-  CardCreationCubit(this._clients, this._creation, this._creationWithClient)
-    : super(_initialState());
+  CardCreationCubit(
+    this._clients,
+    this._creation,
+    this._creationWithClient, {
+    this.capitalGroupRepository,
+  }) : super(_initialState());
 
   static CardCreationState _initialState() {
     final start = DateHelpers.nextMonday(DateTime.now());
@@ -225,6 +250,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
   final ClientRepository _clients;
   final CreditCardCreation _creation;
   final CreateCardWithNewClient _creationWithClient;
+  final CapitalGroupRepository? capitalGroupRepository;
 
   static const lockMessage =
       'El cliente debe liquidar su tarjeta anterior antes de renovar';
@@ -235,11 +261,14 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           ? [preselected]
           : await _clients.watchClients().first;
       final blocked = await _creation.blockedClientIds();
+      final capitalGroups =
+          await capitalGroupRepository?.getGroups() ?? const [];
       emit(
         state.copyWith(
           status: CardCreationStatus.ready,
           clients: clients,
           blockedClientIds: blocked,
+          capitalGroups: capitalGroups,
         ),
       );
       if (preselected != null) await selectClient(preselected);
@@ -325,6 +354,17 @@ class CardCreationCubit extends Cubit<CardCreationState> {
 
   void selectColor(String colorHex) => emit(state.copyWith(colorHex: colorHex));
 
+  void selectCapitalGroup(int? folderId) => emit(
+    state.copyWith(
+      selectedFolderId: folderId,
+      clearSelectedFolder: folderId == null,
+      capitalSelected: true,
+    ),
+  );
+
+  void clearCapitalSelection() =>
+      emit(state.copyWith(clearSelectedFolder: true, capitalSelected: false));
+
   void selectStartDate(DateTime date) => _selectDates(
     DateTime(date.year, date.month, date.day),
     state.firstPaymentDate!,
@@ -378,6 +418,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           option: state.option,
           startDate: state.startDate,
           firstPaymentDate: state.firstPaymentDate,
+          folderId: state.selectedFolderId,
         );
       } else {
         id = await _creation(
@@ -387,6 +428,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           option: state.option,
           startDate: state.startDate,
           firstPaymentDate: state.firstPaymentDate,
+          folderId: state.selectedFolderId,
         );
       }
       emit(

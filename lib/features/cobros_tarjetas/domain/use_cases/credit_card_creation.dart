@@ -49,6 +49,7 @@ class CreditCardCreation {
     DateTime? startDate,
     DateTime? firstPaymentDate,
     DateTime? now,
+    int? folderId,
   }) async {
     await ensureCanRenew(clientId);
 
@@ -75,6 +76,7 @@ class CreditCardCreation {
       colorHex: colorHex,
       startDate: plan.startDate,
       createdAt: now ?? DateTime.now(),
+      folderId: folderId,
     );
     await _repository.createCard(card, plan.installments);
     return cardId;

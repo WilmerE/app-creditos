@@ -108,6 +108,8 @@ class CardCreationViewState extends State<CardCreationView> {
                     child: ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
+                        _CapitalGroupSelector(state: state),
+                        const SizedBox(height: 20),
                         if (!widget.lockedClient) ...[
                           SegmentedButton<ClientMode>(
                             segments: const [
@@ -304,14 +306,100 @@ class CardCreationViewState extends State<CardCreationView> {
                                   ),
                                 )
                               : const Icon(Icons.save_outlined),
-                          label: const Text('Crear tarjeta'),
+                          label: const Text('Guardar tarjeta'),
                         ),
+                        if (!state.canSubmit &&
+                            state.status != CardCreationStatus.saving) ...[
+                          const SizedBox(height: 8),
+                          _CardCreationRequirements(state: state),
+                        ],
                       ],
                     ),
                   ),
                 ),
         );
       },
+    );
+  }
+}
+
+class _CapitalGroupSelector extends StatelessWidget {
+  const _CapitalGroupSelector({required this.state});
+
+  final CardCreationState state;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Selecciona un capital',
+        style: Theme.of(context).textTheme.titleSmall
+            ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 8),
+      DropdownButtonFormField<int?>(
+        initialValue: state.capitalSelected
+            ? state.selectedFolderId ?? 0
+            : null,
+        isExpanded: true,
+        hint: const Text('Selecciona un capital'),
+        decoration: const InputDecoration(
+          labelText: 'Capital / carpeta',
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          const DropdownMenuItem<int?>(
+            value: 0,
+            child: Text('Capital Principal'),
+          ),
+          for (final group in state.capitalGroups)
+            DropdownMenuItem<int?>(value: group.id, child: Text(group.name)),
+        ],
+        onChanged: (value) {
+          final cubit = context.read<CardCreationCubit>();
+          if (value == null) {
+            cubit.clearCapitalSelection();
+          } else {
+            cubit.selectCapitalGroup(value == 0 ? null : value);
+          }
+        },
+      ),
+    ],
+  );
+}
+
+class _CardCreationRequirements extends StatelessWidget {
+  const _CardCreationRequirements({required this.state});
+
+  final CardCreationState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final missing = <String>[];
+    if (!state.capitalSelected) missing.add('selecciona un capital');
+    if (!state.hasValidClient) {
+      if (state.renewalBlocked) {
+        missing.add('resuelve el bloqueo de la tarjeta anterior');
+      } else if (state.mode == ClientMode.newClient) {
+        missing.add('completa los campos obligatorios del cliente');
+      } else {
+        missing.add('selecciona un cliente elegible');
+      }
+    }
+    if (state.plan == null) missing.add('selecciona un monto y plan');
+    if (!state.datesValid) missing.add('define fechas válidas');
+
+    final requirementText = switch (missing.length) {
+      0 => '',
+      1 => missing.single,
+      2 => '${missing.first} y ${missing.last}',
+      _ => '${missing.take(missing.length - 1).join(', ')} y ${missing.last}',
+    };
+
+    return Text(
+      'Para guardar, $requirementText.',
+      style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
     );
   }
 }

@@ -25,6 +25,7 @@ class CreateCardWithNewClient {
     PlanOption? option,
     DateTime? startDate,
     DateTime? firstPaymentDate,
+    int? folderId,
   }) {
     return _tx.run(() async {
       await _clients.save(client, newPhotoSourcePath: photoSourcePath);
@@ -35,6 +36,7 @@ class CreateCardWithNewClient {
         option: option,
         startDate: startDate,
         firstPaymentDate: firstPaymentDate,
+        folderId: folderId,
       );
     });
   }

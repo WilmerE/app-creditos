@@ -24,6 +24,7 @@ class DashboardCard {
     required this.alias,
     required this.photoPath,
     this.primaryPhone,
+    this.folderId,
     required this.status,
     required this.weeklyAmount,
     required this.totalInstallments,
@@ -37,6 +38,7 @@ class DashboardCard {
   final String? alias;
   final String? photoPath;
   final String? primaryPhone;
+  final int? folderId;
   final CardStatus status;
   final double weeklyAmount;
   final int totalInstallments;

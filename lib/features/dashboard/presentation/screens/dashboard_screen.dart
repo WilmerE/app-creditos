@@ -6,6 +6,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/contact_launcher.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../injection_container.dart';
+import '../../../capital_groups/domain/repositories/capital_group_repository.dart';
+import '../../../capital_groups/presentation/screens/capital_groups_screen.dart';
 import '../../../clientes/presentation/widgets/client_avatar.dart';
 import '../../../cobros_tarjetas/domain/entities/credit_card.dart';
 import '../../../cobros_tarjetas/presentation/screens/card_detail_screen.dart';
@@ -18,8 +20,10 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (_) =>
-        DashboardCubit(DriftDashboardRepository(getIt<AppDatabase>()))..start(),
+    create: (_) => DashboardCubit(
+      DriftDashboardRepository(getIt<AppDatabase>()),
+      capitalGroupRepository: getIt<CapitalGroupRepository>(),
+    )..start(),
     child: const DashboardView(),
   );
 }
@@ -98,6 +102,47 @@ class DashboardView extends StatelessWidget {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: state.selectedFolderId ?? 0,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Carpeta de capital',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.folder_outlined),
+                          ),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 0,
+                              child: Text('Capital Principal'),
+                            ),
+                            for (final group in state.capitalGroups)
+                              DropdownMenuItem(
+                                value: group.id,
+                                child: Text(group.name),
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              context.read<DashboardCubit>().selectCapitalGroup(
+                                value == null || value == 0 ? null : value,
+                              ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.outlined(
+                        tooltip: 'Administrar carpetas de capital',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CapitalGroupsScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.settings_outlined),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 16,
                     runSpacing: 16,

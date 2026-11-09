@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../cobros_tarjetas/domain/entities/credit_card.dart';
+import '../../../capital_groups/domain/entities/capital_group.dart';
+import '../../../capital_groups/domain/repositories/capital_group_repository.dart';
 import '../../domain/dashboard_repository.dart';
 
 enum DashboardStatus { loading, ready, error }
@@ -22,13 +24,40 @@ class DashboardState {
     this.status = DashboardStatus.loading,
     this.cards = const [],
     this.filter = DashboardFilter.todayDue,
+    this.capitalGroups = const [],
+    this.selectedFolderId,
     required this.today,
   });
 
   final DashboardStatus status;
   final List<DashboardCard> cards;
   final DashboardFilter filter;
+  final List<CapitalGroup> capitalGroups;
+  final int? selectedFolderId;
   final DateTime today;
+
+  DashboardState copyWith({
+    DashboardStatus? status,
+    List<DashboardCard>? cards,
+    DashboardFilter? filter,
+    List<CapitalGroup>? capitalGroups,
+    int? selectedFolderId,
+    bool clearSelectedFolder = false,
+    DateTime? today,
+  }) => DashboardState(
+    status: status ?? this.status,
+    cards: cards ?? this.cards,
+    filter: filter ?? this.filter,
+    capitalGroups: capitalGroups ?? this.capitalGroups,
+    selectedFolderId: clearSelectedFolder
+        ? null
+        : selectedFolderId ?? this.selectedFolderId,
+    today: today ?? this.today,
+  );
+
+  List<DashboardCard> get selectedCapitalCards => cards
+      .where((card) => card.folderId == selectedFolderId)
+      .toList(growable: false);
 
   bool _isToday(DateTime? date) {
     if (date == null) return false;
@@ -38,12 +67,12 @@ class DashboardState {
         local.day == today.day;
   }
 
-  int count(CardStatus status) => cards.where((card) {
+  int count(CardStatus status) => selectedCapitalCards.where((card) {
     return card.status == status &&
         (status != CardStatus.renewal || card.pendingBalance <= 0.005);
   }).length;
 
-  double get projectedToday => cards
+  double get projectedToday => selectedCapitalCards
       .where((card) => card.status != CardStatus.deactivated)
       .fold(
         0,
@@ -55,7 +84,7 @@ class DashboardState {
                 card.weeklyAmount,
       );
 
-  double get estimatedPaidToday => cards
+  double get estimatedPaidToday => selectedCapitalCards
       .where((card) => card.status != CardStatus.deactivated)
       .fold(
         0,
@@ -69,7 +98,7 @@ class DashboardState {
   List<TodayDuePayment> get todayDuePayments {
     final duePayments =
         [
-          for (final card in cards)
+          for (final card in selectedCapitalCards)
             if (card.status == CardStatus.active ||
                 card.status == CardStatus.debtor)
               for (final payment in card.payments)
@@ -89,7 +118,7 @@ class DashboardState {
   int get paidDueTodayCount =>
       todayDuePayments.where((due) => due.isPaid).length;
 
-  List<DashboardCard> get visibleCards => cards
+  List<DashboardCard> get visibleCards => selectedCapitalCards
       .where((card) {
         return switch (filter) {
           DashboardFilter.active => card.status == CardStatus.active,
@@ -112,54 +141,68 @@ class DashboardState {
 }
 
 class DashboardCubit extends Cubit<DashboardState> {
-  DashboardCubit(this._repository, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now,
-      super(DashboardState(today: (clock ?? DateTime.now)()));
+  DashboardCubit(
+    this._repository, {
+    DateTime Function()? clock,
+    this.capitalGroupRepository,
+  }) : _clock = clock ?? DateTime.now,
+       super(DashboardState(today: (clock ?? DateTime.now)()));
 
   final DashboardRepository _repository;
   final DateTime Function() _clock;
+  final CapitalGroupRepository? capitalGroupRepository;
   StreamSubscription<List<DashboardCard>>? _subscription;
+  StreamSubscription<List<CapitalGroup>>? _capitalGroupsSubscription;
   Timer? _midnight;
 
   void start() {
     _subscription?.cancel();
-    emit(DashboardState(today: _clock(), filter: state.filter));
+    _capitalGroupsSubscription?.cancel();
+    emit(state.copyWith(status: DashboardStatus.loading, today: _clock()));
+    _capitalGroupsSubscription = capitalGroupRepository?.watchGroups().listen((
+      groups,
+    ) {
+      final selectionStillExists = groups.any(
+        (group) => group.id == state.selectedFolderId,
+      );
+      emit(
+        state.copyWith(
+          capitalGroups: groups,
+          clearSelectedFolder:
+              state.selectedFolderId != null && !selectionStillExists,
+        ),
+      );
+    });
     _subscription = _repository.watchCards().listen(
       (cards) {
         emit(
-          DashboardState(
+          state.copyWith(
             status: DashboardStatus.ready,
             cards: cards
                 .where((card) => card.status != CardStatus.archived)
                 .toList(growable: false),
-            filter: state.filter,
             today: _clock(),
           ),
         );
       },
       onError: (Object error, StackTrace stack) {
-        emit(
-          DashboardState(
-            status: DashboardStatus.error,
-            filter: state.filter,
-            today: _clock(),
-          ),
-        );
+        emit(state.copyWith(status: DashboardStatus.error, today: _clock()));
       },
     );
     _scheduleMidnight();
   }
 
   void selectFilter(DashboardFilter filter) {
-    emit(
-      DashboardState(
-        status: state.status,
-        cards: state.cards,
-        filter: filter,
-        today: _clock(),
-      ),
-    );
+    emit(state.copyWith(filter: filter, today: _clock()));
   }
+
+  void selectCapitalGroup(int? folderId) => emit(
+    state.copyWith(
+      selectedFolderId: folderId,
+      clearSelectedFolder: folderId == null,
+      today: _clock(),
+    ),
+  );
 
   Future<void> changeStatus(String cardId, CardStatus status) =>
       _repository.changeStatus(cardId, status);
@@ -176,6 +219,7 @@ class DashboardCubit extends Cubit<DashboardState> {
   @override
   Future<void> close() async {
     _midnight?.cancel();
+    await _capitalGroupsSubscription?.cancel();
     await _subscription?.cancel();
     await super.close();
   }
