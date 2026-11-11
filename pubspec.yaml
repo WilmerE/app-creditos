@@ -21,6 +21,7 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.39
   supabase_flutter: ^2.10.0
   image_picker: ^1.2.4
+  share_plus: ^13.3.1
   url_launcher: ^6.3.3
   uuid: ^4.6.0
   webview_flutter_windows: ^1.1.1
@@ -37,3 +38,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - logo/icon.png
+    - logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg

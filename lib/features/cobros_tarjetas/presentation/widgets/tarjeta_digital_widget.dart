@@ -24,7 +24,7 @@ class _CardMetrics {
   double get smallFont => touch ? 13 : 10;
   double get rowHeight => touch ? 52 : 38;
   double get cellPadding => touch ? 14 : 9;
-  double get avatarRadius => compact ? 34 : 42;
+  double get avatarRadius => 52;
 }
 
 class TarjetaCustomerInfo {
@@ -65,6 +65,7 @@ class TarjetaDigitalWidget extends StatefulWidget {
     this.enterpriseConfig = const EnterpriseConfig(),
     this.renewalColor = const Color(0xFFFFF1D6),
     this.debounceDuration = const Duration(milliseconds: 500),
+    this.readOnly = false,
     super.key,
   });
 
@@ -80,6 +81,7 @@ class TarjetaDigitalWidget extends StatefulWidget {
   final EnterpriseConfig enterpriseConfig;
   final Color renewalColor;
   final Duration debounceDuration;
+  final bool readOnly;
 
   @override
   State<TarjetaDigitalWidget> createState() => _TarjetaDigitalWidgetState();
@@ -276,9 +278,10 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
                       _BalanceSummary(
                         capital: widget.capitalPending!,
                         lateFee: widget.lateFee!,
+                        readOnly: widget.readOnly,
                       ),
                     _buildPaymentTable(metrics),
-                    if (widget.onAddRow != null) ...[
+                    if (!widget.readOnly && widget.onAddRow != null) ...[
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerRight,
@@ -356,6 +359,49 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     int index,
     _CardMetrics metrics,
   ) {
+    final settled =
+        !_unconfirmedPayments.containsKey(payment.id) &&
+        payment.principalPaid > 0 &&
+        (payment.balanceAfter <= 0 ||
+            (widget.weeklyAmount != null &&
+                payment.principalPaid >= widget.weeklyAmount!));
+    if (widget.readOnly) {
+      return TableRow(
+        decoration: BoxDecoration(
+          color: payment.isRenewal ? widget.renewalColor : Colors.transparent,
+        ),
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
+            child: Column(children: [
+              Text(payment.isManual ? 'Manual' : 'Plan original', style: TextStyle(fontSize: metrics.smallFont, color: Colors.grey[700])),
+              Text(payment.scheduledDate == null ? '—' : DateFormat('dd/MM/yyyy').format(payment.scheduledDate!), textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.cellFont)),
+            ]),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
+            child: Column(children: [
+              Text(CurrencyFormatter.formatGtq(payment.amountPaid), textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.cellFont)),
+              if (payment.type != PaymentType.cash) Text('${payment.type.label}${payment.receiptNumber == null ? '' : ' · ${payment.receiptNumber}'}', textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.smallFont)),
+              if (payment.amountPaid > 0 && payment.createdAt != null) Text('${payment.createdAtEstimated ? 'Estimada: ' : 'Recibido: '}${DateFormat('dd/MM/yyyy').format(payment.createdAt!.toLocal())}', textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.smallFont)),
+            ]),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(CurrencyFormatter.formatGtq(payment.balanceAfter), textAlign: TextAlign.right, style: TextStyle(fontSize: metrics.cellFont, fontWeight: FontWeight.w600)),
+                ),
+                if (settled)
+                  const Icon(Icons.check_circle, color: Colors.green, size: 18, semanticLabel: 'Cuota saldada'),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     final locked =
         (payment.createdAt == null && payment.amountPaid > 0) ||
         (payment.createdAt != null &&
@@ -365,12 +411,6 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     final previousBalance = index == 0
         ? widget.initialBalance
         : _payments[index - 1].balanceAfter;
-    final settled =
-        !_unconfirmedPayments.containsKey(payment.id) &&
-        payment.principalPaid > 0 &&
-        (payment.balanceAfter <= 0 ||
-            (widget.weeklyAmount != null &&
-                payment.principalPaid >= widget.weeklyAmount!));
     final canDelete =
         payment.isManual &&
         index == _payments.length - 1 &&
@@ -500,10 +540,11 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
 }
 
 class _BalanceSummary extends StatelessWidget {
-  const _BalanceSummary({required this.capital, required this.lateFee});
+  const _BalanceSummary({required this.capital, required this.lateFee, this.readOnly = false});
 
   final double capital;
   final LateFee lateFee;
+  final bool readOnly;
 
   void _showDetails(BuildContext context) {
     showDialog<void>(
@@ -539,7 +580,7 @@ class _BalanceSummary extends StatelessWidget {
         children: [
           if (lateFee.days > 0 && lateFee.dueDate != null)
             InkWell(
-              onTap: lateFee.dates.isEmpty ? null : () => _showDetails(context),
+              onTap: readOnly || lateFee.dates.isEmpty ? null : () => _showDetails(context),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -559,7 +600,7 @@ class _BalanceSummary extends StatelessWidget {
                 ),
               ),
             ),
-          if (lateFee.dates.isNotEmpty)
+          if (!readOnly && lateFee.dates.isNotEmpty)
             TextButton(
               onPressed: () => _showDetails(context),
               child: const Text('Ver días de atraso'),
@@ -602,13 +643,17 @@ class _CardHeader extends StatelessWidget {
     final info = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          enterprise.name,
-          style: TextStyle(
-            color: _wineColor,
-            fontSize: metrics.compact ? 18 : 21,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.7,
+        Align(
+          alignment: metrics.compact
+              ? Alignment.center
+              : Alignment.centerLeft,
+          child: Image.asset(
+            'logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg',
+            width: metrics.compact ? 210 : 270,
+            height: metrics.compact ? 102 : 132,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            semanticLabel: enterprise.name,
           ),
         ),
         if (enterprise.showPhone && enterprise.phone.trim().isNotEmpty)
@@ -682,7 +727,8 @@ class _CardHeader extends StatelessWidget {
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Align(alignment: Alignment.centerRight, child: avatar),
+                Align(alignment: Alignment.center, child: avatar),
+                const SizedBox(height: 10),
                 info,
               ],
             )
