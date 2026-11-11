@@ -105,7 +105,9 @@ class PaymentLocalDataSource {
         final existing = await (_database.select(
           _database.payments,
         )..where((row) => row.id.equals(installment.id))).getSingleOrNull();
-        if (existing == null || existing.cardId != installment.cardId) {
+        if (existing == null ||
+            existing.cardId != installment.cardId ||
+            existing.deletedAt != null) {
           throw StateError(
             'La cuota ${installment.id} no existe en la tarjeta.',
           );
@@ -318,7 +320,9 @@ class PaymentLocalDataSource {
       )..where((row) => row.id.equals(cardId))).getSingle();
       final rows =
           await (_database.select(_database.payments)
-                ..where((row) => row.cardId.equals(cardId))
+                ..where(
+                  (row) => row.cardId.equals(cardId) & row.deletedAt.isNull(),
+                )
                 ..orderBy([
                   (row) => OrderingTerm.asc(row.isManual),
                   (row) => OrderingTerm.asc(row.position),
@@ -327,15 +331,21 @@ class PaymentLocalDataSource {
                 ]))
               .get();
       var balance = card.totalInstallments * card.weeklyAmount;
+      final updatedAt = DateTime.now();
       for (final row in rows) {
         balance = (balance - row.amountPaid + row.moraCents / 100).clamp(
           0,
           double.infinity,
         );
         if (row.balanceAfter != balance) {
-          await (_database.update(_database.payments)
-                ..where((payment) => payment.id.equals(row.id)))
-              .write(PaymentsCompanion(balanceAfter: Value(balance)));
+          await (_database.update(
+            _database.payments,
+          )..where((payment) => payment.id.equals(row.id))).write(
+            PaymentsCompanion(
+              balanceAfter: Value(balance),
+              updatedAt: Value(updatedAt),
+            ),
+          );
         }
       }
     }
@@ -385,7 +395,9 @@ class PaymentLocalDataSource {
     return _database.transaction(() async {
       final rows =
           await (_database.select(_database.payments)
-                ..where((row) => row.cardId.equals(cardId))
+                ..where(
+                  (row) => row.cardId.equals(cardId) & row.deletedAt.isNull(),
+                )
                 ..orderBy([
                   (row) => OrderingTerm.asc(row.isManual),
                   (row) => OrderingTerm.asc(row.position),
@@ -404,9 +416,12 @@ class PaymentLocalDataSource {
           row.receiptNumber != null) {
         throw StateError('Solo se puede eliminar una fila manual vacía.');
       }
-      await (_database.delete(
+      final now = DateTime.now();
+      await (_database.update(
         _database.payments,
-      )..where((payment) => payment.id.equals(installmentId))).go();
+      )..where((payment) => payment.id.equals(installmentId))).write(
+        PaymentsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+      );
     });
   }
 
@@ -418,9 +433,11 @@ class PaymentLocalDataSource {
     for (final card in await (_database.select(
       _database.cardsTable,
     )..where((row) => row.id.isIn(cardIds))).get()) {
-      final payments = await (_database.select(
-        _database.payments,
-      )..where((row) => row.cardId.equals(card.id))).get();
+      final payments =
+          await (_database.select(_database.payments)..where(
+                (row) => row.cardId.equals(card.id) & row.deletedAt.isNull(),
+              ))
+              .get();
       final paid = payments.fold<double>(
         0,
         (total, payment) =>
@@ -454,9 +471,14 @@ class PaymentLocalDataSource {
         final client = await (_database.select(
           _database.clientsTable,
         )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
-        await (_database.update(_database.cardsTable)
-              ..where((row) => row.id.equals(card.id)))
-            .write(CardsTableCompanion(status: Value(status.name)));
+        await (_database.update(
+          _database.cardsTable,
+        )..where((row) => row.id.equals(card.id))).write(
+          CardsTableCompanion(
+            status: Value(status.name),
+            updatedAt: Value(now),
+          ),
+        );
         if (status == CardStatus.debtor) {
           await OperationalNotificationsLocalDataSource(_database).add(
             eventKey:

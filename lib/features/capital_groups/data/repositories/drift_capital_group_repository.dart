@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../core/database/app_database.dart';
 import '../../domain/entities/capital_group.dart';
@@ -14,14 +15,18 @@ class DriftCapitalGroupRepository implements CapitalGroupRepository {
   @override
   Stream<List<CapitalGroup>> watchGroups() =>
       (_database.select(_database.capitalGroups)
+            ..where((group) => group.deletedAt.isNull())
             ..orderBy([(group) => OrderingTerm.asc(group.name)]))
           .watch()
           .map((rows) => rows.map(_toEntity).toList(growable: false));
 
   @override
-  Future<List<CapitalGroup>> getGroups() async => (_database.select(
-    _database.capitalGroups,
-  )..orderBy([(group) => OrderingTerm.asc(group.name)])).map(_toEntity).get();
+  Future<List<CapitalGroup>> getGroups() async =>
+      (_database.select(_database.capitalGroups)
+            ..where((group) => group.deletedAt.isNull())
+            ..orderBy([(group) => OrderingTerm.asc(group.name)]))
+          .map(_toEntity)
+          .get();
 
   @override
   Future<int> createGroup({required String name, String? description}) =>
@@ -29,9 +34,11 @@ class DriftCapitalGroupRepository implements CapitalGroupRepository {
           .into(_database.capitalGroups)
           .insert(
             CapitalGroupsCompanion.insert(
+              syncId: Value(const Uuid().v4()),
               name: name,
               description: Value(description),
               createdAt: DateTime.now(),
+              updatedAt: Value(DateTime.now()),
             ),
           );
 
@@ -48,6 +55,7 @@ class DriftCapitalGroupRepository implements CapitalGroupRepository {
           CapitalGroupsCompanion(
             name: Value(name),
             description: Value(description),
+            updatedAt: Value(DateTime.now()),
           ),
         );
     if (updated == 0) throw StateError('La carpeta de capital ya no existe.');
@@ -55,10 +63,27 @@ class DriftCapitalGroupRepository implements CapitalGroupRepository {
 
   @override
   Future<void> deleteGroup(int id) async {
-    final deleted = await (_database.delete(
-      _database.capitalGroups,
-    )..where((group) => group.id.equals(id))).go();
-    if (deleted == 0) throw StateError('La carpeta de capital ya no existe.');
+    await _database.transaction(() async {
+      final now = DateTime.now();
+      final deleted =
+          await (_database.update(_database.capitalGroups)..where(
+                (group) => group.id.equals(id) & group.deletedAt.isNull(),
+              ))
+              .write(
+                CapitalGroupsCompanion(
+                  deletedAt: Value(now),
+                  updatedAt: Value(now),
+                ),
+              );
+      if (deleted == 0) {
+        throw StateError('La carpeta de capital ya no existe.');
+      }
+      await (_database.update(
+        _database.cardsTable,
+      )..where((card) => card.folderId.equals(id))).write(
+        CardsTableCompanion(folderId: const Value(null), updatedAt: Value(now)),
+      );
+    });
   }
 
   CapitalGroup _toEntity(CapitalGroupRow row) => CapitalGroup(

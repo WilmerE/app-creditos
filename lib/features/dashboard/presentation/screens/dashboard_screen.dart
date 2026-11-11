@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/database/app_database.dart';
+import '../../../../core/network/supabase_delta_sync.dart';
+import '../../../../core/network/sync_status_button.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/contact_launcher.dart';
 import '../../../../core/utils/currency_formatter.dart';
@@ -74,7 +76,10 @@ class DashboardView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard de cobros')),
+      appBar: AppBar(
+        title: const Text('Dashboard de cobros'),
+        actions: [SyncStatusButton(sync: getIt<SupabaseDeltaSync>())],
+      ),
       body: BlocBuilder<DashboardCubit, DashboardState>(
         builder: (context, state) {
           if (state.status == DashboardStatus.loading) {

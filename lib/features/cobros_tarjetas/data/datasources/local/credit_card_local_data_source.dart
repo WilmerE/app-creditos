@@ -107,9 +107,14 @@ class CreditCardLocalDataSource {
         final client = await (_database.select(
           _database.clientsTable,
         )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
-        await (_database.update(cards)
-              ..where((c) => c.id.equals(balance.card.id)))
-            .write(CardsTableCompanion(status: Value(CardStatus.paid.name)));
+        await (_database.update(
+          cards,
+        )..where((c) => c.id.equals(balance.card.id))).write(
+          CardsTableCompanion(
+            status: Value(CardStatus.paid.name),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
         await OperationalNotificationsLocalDataSource(_database).add(
           eventKey: 'paid:${balance.card.id}',
           type: 'card_paid',

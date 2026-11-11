@@ -2,8 +2,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/entities/client.dart';
 
-/// Remote contract used by the sync layer (Team B). Not wired to the
-/// repository yet: the app is offline-first and Supabase is not initialized.
+/// Per-client remote contract retained for focused use cases. Whole-database
+/// push/pull orchestration lives in `core/network/supabase_delta_sync.dart`.
 abstract interface class ClientRemoteDataSource {
   Future<void> upsertClients(List<Client> clients);
 

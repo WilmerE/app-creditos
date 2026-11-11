@@ -61,6 +61,42 @@ ni modifica datos existentes. Se ejecuta una sola vez por base de datos. No
 utilice estos datos para cobros ni contacte los teléfonos de ejemplo. La opción
 no aparece en compilaciones de producción.
 
+## Sincronización con Supabase
+
+Drift/SQLite sigue siendo la fuente local y la aplicación funciona sin
+configuración de nube o sin conexión. Para habilitar la sincronización, cree
+`supabase.local.json` en la raíz con `SUPABASE_URL` y `SUPABASE_API_KEY`
+(la publishable/anon key; nunca use `service_role` en la app), y ejecute:
+
+```powershell
+flutter run -d windows --dart-define-from-file=supabase.local.json
+```
+
+Para Android, use el mismo argumento con `-d <id_del_dispositivo>`. En el
+Dashboard, pulse el icono de nube para crear una cuenta o iniciar sesión. Los
+dispositivos sincronizan los registros de esa cuenta por `updated_at`; en
+conflictos gana la versión con la marca más reciente. El proceso se intenta al
+iniciar sesión, al abrir la app y cada dos minutos. Las fotos continúan en el
+dispositivo; los registros de clientes conservan su ruta local de foto sin
+subirla.
+
+Antes de usar una instancia nueva, aplique
+`supabase/migrations/20261110000000_local_first_sync.sql` en el SQL Editor de
+Supabase. La migración crea las tablas espejo y limita lectura y escritura a
+filas del usuario autenticado mediante RLS. Las cuentas y el esquema del
+proyecto de Supabase deben estar habilitados para Auth por correo y contraseña.
+
+### Sesión y trabajo offline
+
+La sesión de Supabase se guarda en el almacén seguro del sistema operativo.
+Al iniciar la actualización, la aplicación migra automáticamente una sesión
+existente desde las preferencias locales. Iniciar sesión no es requisito para
+abrir la app ni trabajar con Drift; en un primer inicio sin conexión, se puede
+usar la base local e iniciar sesión cuando vuelva la red. La sincronización se
+dispara al volver la conectividad, al reanudar la app, al iniciar sesión y cada
+dos minutos. El estado de conectividad es aproximado: cada petición remota se
+protege ante fallos de red.
+
 ## Dashboard de cobros
 
 El botón **Dashboard** muestra tarjetas por estado y permite filtrar su listado

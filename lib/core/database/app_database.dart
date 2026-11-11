@@ -47,9 +47,12 @@ class ClientPhones extends Table {
 @DataClassName('CapitalGroupRow')
 class CapitalGroups extends Table {
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get syncId => text().withDefault(const Constant(''))();
   TextColumn get name => text()();
   TextColumn get description => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 }
 
 @DataClassName('CardRow')
@@ -72,6 +75,7 @@ class CardsTable extends Table {
   TextColumn get colorHex => text().withDefault(const Constant('#800020'))();
   DateTimeColumn get startDate => dateTime()();
   DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 
   @override
   Set<Column<Object>> get primaryKey => {id};
@@ -186,7 +190,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 14;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -196,7 +200,10 @@ class AppDatabase extends _$AppDatabase {
 
   Stream<List<Payment>> watchPayments(String cardId) {
     return (select(payments)
-          ..where((payment) => payment.cardId.equals(cardId))
+          ..where(
+            (payment) =>
+                payment.cardId.equals(cardId) & payment.deletedAt.isNull(),
+          )
           ..orderBy([
             (payment) => OrderingTerm.asc(payment.isManual),
             (payment) => OrderingTerm.asc(payment.position),
@@ -290,6 +297,22 @@ class AppDatabase extends _$AppDatabase {
         );
         await migrator.createTable(operationalNotifications);
       }
+      if (from < 13) {
+        await migrator.addColumn(capitalGroups, capitalGroups.syncId);
+        await migrator.addColumn(capitalGroups, capitalGroups.updatedAt);
+        await migrator.addColumn(capitalGroups, capitalGroups.deletedAt);
+        await migrator.addColumn(cardsTable, cardsTable.updatedAt);
+        await customStatement(
+          "UPDATE capital_groups SET sync_id = lower(hex(randomblob(4))) || '-' || "
+          "lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || "
+          "substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' || "
+          "lower(hex(randomblob(6))), updated_at = created_at WHERE sync_id = ''",
+        );
+        await customStatement('UPDATE cards SET updated_at = created_at');
+      }
+      if (from < 14) {
+        await migrator.addColumn(payments, payments.deletedAt);
+      }
     },
   );
 
@@ -323,6 +346,7 @@ class Payments extends Table {
   BoolColumn get isManual => boolean().withDefault(const Constant(false))();
   IntColumn get position => integer().withDefault(const Constant(0))();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};

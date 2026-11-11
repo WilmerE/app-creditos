@@ -54,9 +54,14 @@ class DriftDashboardRepository implements DashboardRepository {
           hasOverdueInstallment: hasOverdue,
         );
         if (actualStatus != storedStatus) {
-          await (_db.update(_db.cardsTable)
-                ..where((row) => row.id.equals(card.id)))
-              .write(CardsTableCompanion(status: Value(actualStatus.name)));
+          await (_db.update(
+            _db.cardsTable,
+          )..where((row) => row.id.equals(card.id))).write(
+            CardsTableCompanion(
+              status: Value(actualStatus.name),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
           final client = await (_db.select(
             _db.clientsTable,
           )..where((row) => row.id.equals(card.clientId))).getSingleOrNull();
@@ -323,7 +328,7 @@ class DriftDashboardRepository implements DashboardRepository {
       }
       if (card.status == status.name) return;
       await (_db.update(cards)..where((c) => c.id.equals(cardId))).write(
-        CardsTableCompanion(status: Value(status.name)),
+        CardsTableCompanion(status: Value(status.name), updatedAt: Value(now)),
       );
       if (status == CardStatus.paid ||
           status == CardStatus.debtor ||
