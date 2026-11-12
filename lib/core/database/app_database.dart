@@ -298,20 +298,47 @@ class AppDatabase extends _$AppDatabase {
         await migrator.createTable(operationalNotifications);
       }
       if (from < 13) {
-        await migrator.addColumn(capitalGroups, capitalGroups.syncId);
-        await migrator.addColumn(capitalGroups, capitalGroups.updatedAt);
-        await migrator.addColumn(capitalGroups, capitalGroups.deletedAt);
-        await migrator.addColumn(cardsTable, cardsTable.updatedAt);
+        // Some development builds added sync columns without advancing
+        // user_version. Make this migration tolerant of those databases.
+        await _addColumnIfMissing(
+          migrator,
+          capitalGroups,
+          capitalGroups.syncId,
+        );
+        final groupsUpdatedAtAdded = await _addDateTimeColumnIfMissing(
+          capitalGroups.actualTableName,
+          'updated_at',
+        );
+        await _addColumnIfMissing(
+          migrator,
+          capitalGroups,
+          capitalGroups.deletedAt,
+        );
+        final cardsUpdatedAtAdded = await _addDateTimeColumnIfMissing(
+          cardsTable.actualTableName,
+          'updated_at',
+        );
         await customStatement(
           "UPDATE capital_groups SET sync_id = lower(hex(randomblob(4))) || '-' || "
           "lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || "
           "substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' || "
-          "lower(hex(randomblob(6))), updated_at = created_at WHERE sync_id = ''",
+          "lower(hex(randomblob(6))) WHERE sync_id = ''",
         );
-        await customStatement('UPDATE cards SET updated_at = created_at');
+        if (groupsUpdatedAtAdded) {
+          await customStatement(
+            'UPDATE capital_groups SET updated_at = created_at',
+          );
+        } else {
+          await customStatement(
+            "UPDATE capital_groups SET updated_at = created_at WHERE sync_id = ''",
+          );
+        }
+        if (cardsUpdatedAtAdded) {
+          await customStatement('UPDATE cards SET updated_at = created_at');
+        }
       }
       if (from < 14) {
-        await migrator.addColumn(payments, payments.deletedAt);
+        await _addColumnIfMissing(migrator, payments, payments.deletedAt);
       }
     },
   );
@@ -319,6 +346,50 @@ class AppDatabase extends _$AppDatabase {
   Future<void> _createMoraIndex() => customStatement(
     'CREATE UNIQUE INDEX mora_card_day_unique ON mora (card_id, created_at)',
   );
+
+  Future<bool> _hasColumn(String tableName, String columnName) async {
+    final columns = await customSelect('PRAGMA table_info("$tableName")').get();
+    return columns.any((column) => column.read<String>('name') == columnName);
+  }
+
+  Future<bool> _addColumnIfMissing(
+    Migrator migrator,
+    TableInfo<Table, Object?> table,
+    GeneratedColumn<Object> column,
+  ) async {
+    final tableName = table.actualTableName;
+    if (await _hasColumn(tableName, column.$name)) return false;
+    try {
+      await migrator.addColumn(table, column);
+      return true;
+    } on Object catch (error) {
+      // Handles a column added by an older build despite a stale user_version.
+      if (!error.toString().toLowerCase().contains('duplicate column name')) {
+        rethrow;
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _addDateTimeColumnIfMissing(
+    String tableName,
+    String columnName,
+  ) async {
+    if (await _hasColumn(tableName, columnName)) return false;
+    try {
+      // SQLite ALTER TABLE only accepts constant defaults for added columns.
+      await customStatement(
+        'ALTER TABLE "$tableName" ADD COLUMN "$columnName" '
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+      return true;
+    } on Object catch (error) {
+      if (!error.toString().toLowerCase().contains('duplicate column name')) {
+        rethrow;
+      }
+      return false;
+    }
+  }
 
   Future<void> _setMoraBaseline() => into(syncMetadata)
       .insertOnConflictUpdate(

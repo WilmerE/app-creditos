@@ -142,6 +142,7 @@ class CreditCardLocalDataSource {
               colorHex: Value(card.colorHex),
               startDate: card.startDate,
               createdAt: card.createdAt,
+              updatedAt: Value(card.createdAt),
             ),
           );
       await _database.savePayments([
