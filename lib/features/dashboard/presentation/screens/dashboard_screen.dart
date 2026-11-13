@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/database/app_database.dart';
+import '../../../../core/database/database_seed.dart';
 import '../../../../core/network/supabase_delta_sync.dart';
 import '../../../../core/network/sync_status_button.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -10,13 +12,29 @@ import '../../../../core/utils/currency_formatter.dart';
 import '../../../../injection_container.dart';
 import '../../../capital_groups/domain/repositories/capital_group_repository.dart';
 import '../../../capital_groups/presentation/screens/capital_groups_screen.dart';
+import '../../../clientes/presentation/screens/client_list_screen.dart';
+import '../../../cobros_tarjetas/presentation/screens/card_navigation.dart';
+import '../../../cobros_tarjetas/data/credit_plan_repository.dart';
+import '../../../cobros_tarjetas/presentation/screens/credit_plans_screen.dart';
 import '../../../clientes/presentation/widgets/client_avatar.dart';
 import '../../../cobros_tarjetas/domain/entities/credit_card.dart';
 import '../../../cobros_tarjetas/presentation/screens/card_detail_screen.dart';
+import '../../../enterprise/presentation/enterprise_config_screen.dart';
+import '../../../auth/presentation/screens/account_management_screen.dart';
 import '../../data/drift_dashboard_repository.dart';
 import '../../data/operational_notifications_local_data_source.dart';
 import '../../domain/dashboard_repository.dart';
 import '../bloc/dashboard_cubit.dart';
+
+enum _DashboardMenuAction {
+  newCard,
+  clients,
+  enterprise,
+  plans,
+  account,
+  seed,
+  signOut,
+}
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -78,7 +96,120 @@ class DashboardView extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard de cobros'),
-        actions: [SyncStatusButton(sync: getIt<SupabaseDeltaSync>())],
+        actions: [
+          _OperationalNotificationsButton(
+            source: OperationalNotificationsLocalDataSource(
+              getIt<AppDatabase>(),
+            ),
+          ),
+          SyncStatusButton(sync: getIt<SupabaseDeltaSync>()),
+          PopupMenuButton<_DashboardMenuAction>(
+            tooltip: 'Menú de la aplicación',
+            onSelected: (action) async {
+              switch (action) {
+                case _DashboardMenuAction.newCard:
+                  await openCardCreation(context);
+                case _DashboardMenuAction.clients:
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ClientListScreen(
+                        onCreateCard: (client) =>
+                            createCardFor(context, client),
+                        onOpenCards: (client) =>
+                            openClientCards(context, client),
+                      ),
+                    ),
+                  );
+                case _DashboardMenuAction.enterprise:
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const EnterpriseConfigScreen(),
+                    ),
+                  );
+                case _DashboardMenuAction.plans:
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CreditPlansScreen(
+                        repository: getIt<CreditPlanRepository>(),
+                      ),
+                    ),
+                  );
+                case _DashboardMenuAction.account:
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AccountManagementScreen(
+                        sync: getIt<SupabaseDeltaSync>(),
+                      ),
+                    ),
+                  );
+                case _DashboardMenuAction.seed:
+                  await _seed(context);
+                case _DashboardMenuAction.signOut:
+                  await confirmAndSignOut(context, getIt<SupabaseDeltaSync>());
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: _DashboardMenuAction.newCard,
+                child: ListTile(
+                  leading: Icon(Icons.add_card),
+                  title: Text('Nueva tarjeta'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: _DashboardMenuAction.clients,
+                child: ListTile(
+                  leading: Icon(Icons.people_outline),
+                  title: Text('Clientes'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: _DashboardMenuAction.enterprise,
+                child: ListTile(
+                  leading: Icon(Icons.business_outlined),
+                  title: Text('Configuración empresarial'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: _DashboardMenuAction.plans,
+                child: ListTile(
+                  leading: Icon(Icons.price_change_outlined),
+                  title: Text('Planes de crédito'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: _DashboardMenuAction.account,
+                child: ListTile(
+                  leading: Icon(Icons.manage_accounts_outlined),
+                  title: Text('Gestionar usuario'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (kDebugMode)
+                const PopupMenuItem(
+                  value: _DashboardMenuAction.seed,
+                  child: ListTile(
+                    leading: Icon(Icons.science_outlined),
+                    title: Text('Cargar datos de prueba'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: _DashboardMenuAction.signOut,
+                child: ListTile(
+                  leading: Icon(Icons.logout),
+                  title: Text('Cerrar sesión'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: BlocBuilder<DashboardCubit, DashboardState>(
         builder: (context, state) {
@@ -110,7 +241,6 @@ class DashboardView extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 children: [
                   _CollectionDeadlineBanner(state: state),
-                  _OperationalAlerts(folderId: state.selectedFolderId),
                   _UrgentDelinquencySection(state: state),
                   Row(
                     children: [
@@ -239,6 +369,50 @@ class DashboardView extends StatelessWidget {
   }
 }
 
+Future<void> _seed(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Cargar datos de prueba'),
+      content: const Text(
+        'Se crearán 80 clientes ficticios y 200 tarjetas en esta base local. '
+        'Solo se permite en una base sin clientes, tarjetas ni pagos. '
+        'No utilice estos datos para cobros ni contacte los teléfonos de ejemplo.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Cargar datos'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  try {
+    final result = await DatabaseSeed(getIt<AppDatabase>()).run();
+    if (!context.mounted) return;
+    final message = switch (result) {
+      DatabaseSeedResult.inserted =>
+        'Se cargaron 80 clientes y 200 tarjetas de prueba.',
+      DatabaseSeedResult.alreadyInserted =>
+        'Los datos de prueba ya fueron cargados.',
+    };
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  } on Object catch (error) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('No se pudieron cargar los datos de prueba: $error'),
+      ),
+    );
+  }
+}
+
 enum _TodayDueGroup { pending, paid }
 
 class _TodayDueList extends StatefulWidget {
@@ -304,58 +478,226 @@ class _UrgentDelinquencySection extends StatelessWidget {
   }
 }
 
-class _OperationalAlerts extends StatelessWidget {
-  const _OperationalAlerts({required this.folderId});
-  final int? folderId;
+class _OperationalNotificationsButton extends StatelessWidget {
+  const _OperationalNotificationsButton({required this.source});
+
+  final OperationalNotificationsLocalDataSource source;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<int>(
+    stream: source.watchUnreadCount(),
+    builder: (context, snapshot) {
+      final unreadCount = snapshot.data ?? 0;
+      return IconButton(
+        tooltip: unreadCount == 0
+            ? 'Notificaciones'
+            : 'Notificaciones sin leer: $unreadCount',
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (_) => _OperationalNotificationsDialog(source: source),
+        ),
+        icon: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Icon(Icons.notifications_outlined),
+            if (unreadCount > 0)
+              Positioned(
+                top: -7,
+                right: -8,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 18),
+                  height: 18,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.error,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    unreadCount > 99 ? '99+' : '$unreadCount',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onError,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _OperationalNotificationsDialog extends StatefulWidget {
+  const _OperationalNotificationsDialog({required this.source});
+
+  final OperationalNotificationsLocalDataSource source;
+
+  @override
+  State<_OperationalNotificationsDialog> createState() =>
+      _OperationalNotificationsDialogState();
+}
+
+class _OperationalNotificationsDialogState
+    extends State<_OperationalNotificationsDialog> {
+  bool _unreadOnly = false;
+  final _listController = ScrollController();
+
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
+  }
+
+  String _formatDate(DateTime date) {
+    final local = date.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/${local.year} · $hour:$minute';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final db = getIt<AppDatabase>();
-    final source = OperationalNotificationsLocalDataSource(db);
-    return StreamBuilder(
-      stream: source.watch(folderId: folderId),
-      builder: (context, snapshot) {
-        final alerts = (snapshot.data ?? const [])
-            .where((alert) => !alert.isRead)
-            .take(5)
-            .toList(growable: false);
-        if (alerts.isEmpty) return const SizedBox.shrink();
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final screenSize = MediaQuery.sizeOf(context);
+    final height = (screenSize.height * 0.72).clamp(320.0, 680.0).toDouble();
+    final width = (screenSize.width - 48).clamp(280.0, 620.0).toDouble();
+    return Dialog(
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: StreamBuilder<List<OperationalNotificationRow>>(
+          stream: widget.source.watchAll(),
+          builder: (context, snapshot) {
+            final notifications = snapshot.data ?? const [];
+            final unreadCount = notifications.where((item) => !item.isRead).length;
+            final visible = _unreadOnly
+                ? notifications.where((item) => !item.isRead).toList()
+                : notifications;
+
+            return Column(
               children: [
-                Text(
-                  'Alertas operativas (${alerts.length})',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Notificaciones',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Cerrar',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
                 ),
-                for (final alert in alerts)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      alert.type == 'urgent_delinquency'
-                          ? Icons.priority_high
-                          : alert.type == 'mora_day'
-                          ? Icons.warning_amber
-                          : Icons.notifications_active,
-                      color: alert.type == 'urgent_delinquency'
-                          ? Colors.deepOrange
-                          : Theme.of(context).colorScheme.primary,
-                    ),
-                    title: Text(alert.title),
-                    subtitle: Text(alert.message),
-                    trailing: IconButton(
-                      tooltip: 'Marcar como leída',
-                      icon: const Icon(Icons.done),
-                      onPressed: () => source.markRead(alert.id),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      Text('$unreadCount sin leer'),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: unreadCount == 0
+                            ? null
+                            : widget.source.markAllRead,
+                        icon: const Icon(Icons.done_all),
+                        label: const Text('Marcar todas como leídas'),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Todas')),
+                      ButtonSegment(value: true, label: Text('No leídas')),
+                    ],
+                    selected: {_unreadOnly},
+                    onSelectionChanged: (selection) => setState(
+                      () => _unreadOnly = selection.single,
                     ),
                   ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: snapshot.hasError
+                      ? const Center(
+                          child: Text('No se pudieron cargar las notificaciones.'),
+                        )
+                      : visible.isEmpty
+                      ? Center(
+                          child: Text(
+                            _unreadOnly
+                                ? 'No tienes notificaciones sin leer.'
+                                : 'Todavía no tienes notificaciones.',
+                          ),
+                        )
+                      : Scrollbar(
+                          controller: _listController,
+                          thumbVisibility: true,
+                          child: ListView.separated(
+                            controller: _listController,
+                            itemCount: visible.length,
+                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final notification = visible[index];
+                              final urgent =
+                                  notification.type == 'urgent_delinquency';
+                              return ListTile(
+                                tileColor: notification.isRead
+                                    ? null
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .secondaryContainer
+                                          .withValues(alpha: 0.35),
+                                leading: Icon(
+                                  urgent
+                                      ? Icons.priority_high
+                                      : notification.type == 'mora_day'
+                                      ? Icons.warning_amber
+                                      : Icons.notifications_active_outlined,
+                                  color: urgent
+                                      ? Colors.deepOrange
+                                      : Theme.of(context).colorScheme.primary,
+                                ),
+                                title: Text(notification.title),
+                                subtitle: Text(
+                                  '${notification.message}\n${_formatDate(notification.createdAt)}',
+                                ),
+                                isThreeLine: true,
+                                trailing: notification.isRead
+                                    ? const Tooltip(
+                                        message: 'Leída',
+                                        child: Icon(Icons.done, size: 20),
+                                      )
+                                    : IconButton(
+                                        tooltip: 'Marcar como leída',
+                                        onPressed: () => widget.source.markRead(
+                                          notification.id,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.mark_email_read_outlined,
+                                        ),
+                                      ),
+                              );
+                            },
+                          ),
+                        ),
+                ),
               ],
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }

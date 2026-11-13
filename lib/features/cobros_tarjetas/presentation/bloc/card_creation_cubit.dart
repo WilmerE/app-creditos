@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/utils/date_helpers.dart';
 import '../../../capital_groups/domain/entities/capital_group.dart';
 import '../../../capital_groups/domain/repositories/capital_group_repository.dart';
+import '../../data/credit_plan_repository.dart';
+import '../../domain/entities/credit_plan.dart';
 import '../../../clientes/domain/entities/client.dart';
 import '../../../clientes/domain/repositories/client_repository.dart';
 import '../../domain/services/payment_plan_calculator.dart';
@@ -82,6 +84,7 @@ class CardCreationState extends Equatable {
     this.amount,
     this.option,
     this.plan,
+    this.plans,
     this.startDate,
     this.firstPaymentDate,
     this.colorHex = defaultColorHex,
@@ -106,6 +109,7 @@ class CardCreationState extends Equatable {
   final double? amount;
   final PlanOption? option;
   final PaymentPlan? plan;
+  final List<CreditPlan>? plans;
   final DateTime? startDate;
   final DateTime? firstPaymentDate;
   final String colorHex;
@@ -113,8 +117,29 @@ class CardCreationState extends Equatable {
   final String? errorMessage;
   final String? createdCardId;
 
+  List<double> get quickAmounts {
+    final catalog = plans;
+    if (catalog == null) return PaymentPlanCalculator.quickAmounts;
+    final amounts = catalog
+        .where((plan) => plan.isActive)
+        .map((plan) => plan.amount)
+        .toSet()
+        .toList();
+    amounts.sort();
+    return amounts;
+  }
+
+  List<PlanOption> optionsForAmount(double value) {
+    final catalog = plans;
+    if (catalog == null) return PaymentPlanCalculator.optionsFor(value);
+    return catalog
+        .where((plan) => plan.isActive && plan.amount == value)
+        .map((plan) => plan.option)
+        .toList(growable: false);
+  }
+
   List<PlanOption> get options =>
-      amount == null ? const [] : PaymentPlanCalculator.optionsFor(amount!);
+      amount == null ? const [] : optionsForAmount(amount!);
 
   bool hasActiveCard(Client client) => blockedClientIds.contains(client.id);
 
@@ -172,6 +197,7 @@ class CardCreationState extends Equatable {
     double? Function()? amount,
     PlanOption? Function()? option,
     PaymentPlan? Function()? plan,
+    List<CreditPlan>? plans,
     DateTime? startDate,
     DateTime? firstPaymentDate,
     String? colorHex,
@@ -196,6 +222,7 @@ class CardCreationState extends Equatable {
       amount: amount != null ? amount() : this.amount,
       option: option != null ? option() : this.option,
       plan: plan != null ? plan() : this.plan,
+      plans: plans ?? this.plans,
       startDate: startDate ?? this.startDate,
       firstPaymentDate: firstPaymentDate ?? this.firstPaymentDate,
       colorHex: colorHex ?? this.colorHex,
@@ -221,6 +248,7 @@ class CardCreationState extends Equatable {
     amount,
     option,
     plan,
+    plans,
     startDate,
     firstPaymentDate,
     colorHex,
@@ -237,6 +265,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
     this._creation,
     this._creationWithClient, {
     this.capitalGroupRepository,
+    this.planRepository,
   }) : super(_initialState());
 
   static CardCreationState _initialState() {
@@ -251,6 +280,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
   final CreditCardCreation _creation;
   final CreateCardWithNewClient _creationWithClient;
   final CapitalGroupRepository? capitalGroupRepository;
+  final CreditPlanRepository? planRepository;
 
   static const lockMessage =
       'El cliente debe liquidar su tarjeta anterior antes de renovar';
@@ -263,12 +293,14 @@ class CardCreationCubit extends Cubit<CardCreationState> {
       final blocked = await _creation.blockedClientIds();
       final capitalGroups =
           await capitalGroupRepository?.getGroups() ?? const [];
+      final plans = await planRepository?.getActive();
       emit(
         state.copyWith(
           status: CardCreationStatus.ready,
           clients: clients,
           blockedClientIds: blocked,
           capitalGroups: capitalGroups,
+          plans: plans,
         ),
       );
       if (preselected != null) await selectClient(preselected);
@@ -276,7 +308,8 @@ class CardCreationCubit extends Cubit<CardCreationState> {
       emit(
         state.copyWith(
           status: CardCreationStatus.failure,
-          errorMessage: () => 'No se pudo cargar la lista de clientes.',
+        errorMessage: () =>
+            'No se pudo cargar la lista de clientes y planes de crédito.',
         ),
       );
     }
@@ -332,7 +365,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
   void selectAmount(double? amount) {
     final options = amount == null
         ? const <PlanOption>[]
-        : PaymentPlanCalculator.optionsFor(amount);
+        : state.optionsForAmount(amount);
     final option = options.isEmpty ? null : options.first;
     emit(
       state.copyWith(
@@ -416,6 +449,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           requestedAmount: amount,
           colorHex: state.colorHex,
           option: state.option,
+          availableOptions: state.options,
           startDate: state.startDate,
           firstPaymentDate: state.firstPaymentDate,
           folderId: state.selectedFolderId,
@@ -426,6 +460,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
           requestedAmount: amount,
           colorHex: state.colorHex,
           option: state.option,
+          availableOptions: state.options,
           startDate: state.startDate,
           firstPaymentDate: state.firstPaymentDate,
           folderId: state.selectedFolderId,
@@ -466,6 +501,7 @@ class CardCreationCubit extends Cubit<CardCreationState> {
       requestedAmount: amount,
       cardId: 'preview',
       option: option,
+      availableOptions: state.optionsForAmount(amount),
       startDate: start,
       firstPaymentDate: first,
     );

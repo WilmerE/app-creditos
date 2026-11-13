@@ -185,8 +185,7 @@ class CardCreationViewState extends State<CardCreationView> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
-                            for (final amount
-                                in PaymentPlanCalculator.quickAmounts)
+                            for (final amount in state.quickAmounts)
                               ChoiceChip(
                                 label: Text(
                                   CurrencyFormatter.formatGtq(amount),
@@ -213,7 +212,7 @@ class CardCreationViewState extends State<CardCreationView> {
                             prefixText: 'Q ',
                             border: const OutlineInputBorder(),
                             errorText: unsupportedCustom
-                                ? 'Sin plan para este monto (use 500, 1,000, 1,500, 2,000 o múltiplos de 250 superiores a 2,000)'
+                                ? 'No hay un plan activo para este monto. Agrégalo desde Planes de crédito.'
                                 : null,
                             errorMaxLines: 3,
                           ),

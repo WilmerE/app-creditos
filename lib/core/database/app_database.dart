@@ -215,7 +215,10 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-    beforeOpen: (_) => customStatement('PRAGMA foreign_keys = ON'),
+    beforeOpen: (_) async {
+      await customStatement('PRAGMA foreign_keys = ON');
+      await _ensureCreditPlanCatalog();
+    },
     onCreate: (Migrator migrator) async {
       await migrator.createAll();
       await _createMoraIndex();
@@ -342,6 +345,44 @@ class AppDatabase extends _$AppDatabase {
       }
     },
   );
+
+  Future<void> _ensureCreditPlanCatalog() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS credit_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+        installments INTEGER NOT NULL CHECK (installments > 0),
+        installment_cents INTEGER NOT NULL CHECK (installment_cents > 0),
+        is_active INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (amount_cents, installments, installment_cents)
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS credit_plan_catalog_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        initialized INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    final initialized = await customSelect(
+      'SELECT initialized FROM credit_plan_catalog_meta WHERE id = 1',
+    ).getSingleOrNull();
+    if (initialized != null) return;
+    await customStatement('''
+      INSERT OR IGNORE INTO credit_plans
+        (amount_cents, installments, installment_cents, is_active)
+      VALUES
+        (50000, 6, 12500, 1),
+        (100000, 4, 32000, 1),
+        (100000, 7, 21000, 1),
+        (150000, 6, 32000, 1),
+        (200000, 8, 32000, 1),
+        (300000, 12, 32000, 1),
+        (500000, 20, 32000, 1)
+    ''');
+    await customStatement(
+      'INSERT INTO credit_plan_catalog_meta (id, initialized) VALUES (1, 1)',
+    );
+  }
 
   Future<void> _createMoraIndex() => customStatement(
     'CREATE UNIQUE INDEX mora_card_day_unique ON mora (card_id, created_at)',

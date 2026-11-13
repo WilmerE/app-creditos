@@ -20,6 +20,20 @@ class OperationalNotificationsLocalDataSource {
     return query.watch();
   }
 
+  Stream<List<OperationalNotificationRow>> watchAll() {
+    final query = db.select(db.operationalNotifications)
+      ..orderBy([(row) => OrderingTerm.desc(row.createdAt)]);
+    return query.watch();
+  }
+
+  Stream<int> watchUnreadCount() {
+    final count = db.operationalNotifications.id.count();
+    final query = db.selectOnly(db.operationalNotifications)
+      ..addColumns([count])
+      ..where(db.operationalNotifications.isRead.equals(false));
+    return query.map((row) => row.read(count) ?? 0).watchSingle();
+  }
+
   Future<void> add({
     required String eventKey,
     required String type,
@@ -121,5 +135,10 @@ class OperationalNotificationsLocalDataSource {
   Future<void> markRead(int id) =>
       (db.update(db.operationalNotifications)
             ..where((row) => row.id.equals(id)))
+          .write(const OperationalNotificationsCompanion(isRead: Value(true)));
+
+  Future<void> markAllRead() =>
+      (db.update(db.operationalNotifications)
+            ..where((row) => row.isRead.equals(false)))
           .write(const OperationalNotificationsCompanion(isRead: Value(true)));
 }

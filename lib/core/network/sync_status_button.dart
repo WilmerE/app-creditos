@@ -2,6 +2,35 @@ import 'package:flutter/material.dart';
 
 import 'supabase_delta_sync.dart';
 
+Future<void> confirmAndSignOut(
+  BuildContext context,
+  SupabaseDeltaSync sync,
+) async {
+  final pending = sync.hasPendingChanges;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('¿Cerrar sesión?'),
+      content: Text(
+        pending
+            ? 'No se puede confirmar que todos los cambios locales estén sincronizados. Si cierras sesión, tendrás que volver a entrar con esta misma cuenta para continuar; los datos permanecerán guardados en este dispositivo.'
+            : 'Los datos locales permanecerán guardados en este dispositivo. Para acceder de nuevo necesitarás iniciar sesión.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Cerrar sesión'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true && context.mounted) await sync.signOut();
+}
+
 class SyncStatusButton extends StatelessWidget {
   const SyncStatusButton({required this.sync, super.key});
 
@@ -66,7 +95,6 @@ class _SyncAccountDialog extends StatefulWidget {
 class _SyncAccountDialogState extends State<_SyncAccountDialog> {
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _register = false;
   bool _busy = false;
   String? _error;
 
@@ -83,9 +111,10 @@ class _SyncAccountDialogState extends State<_SyncAccountDialog> {
       _error = null;
     });
     try {
-      final response = _register
-          ? await widget.sync.signUp(_email.text.trim(), _password.text)
-          : await widget.sync.signIn(_email.text.trim(), _password.text);
+      final response = await widget.sync.signIn(
+        _email.text.trim(),
+        _password.text,
+      );
       if (!mounted) return;
       if (response.session == null) {
         setState(() {
@@ -158,15 +187,6 @@ class _SyncAccountDialogState extends State<_SyncAccountDialog> {
           child: const Text('Cerrar'),
         ),
         if (user == null) ...[
-          TextButton(
-            onPressed: _busy
-                ? null
-                : () => setState(() {
-                    _register = !_register;
-                    _error = null;
-                  }),
-            child: Text(_register ? 'Ya tengo cuenta' : 'Crear cuenta'),
-          ),
           FilledButton(
             onPressed: _busy ? null : _submit,
             child: _busy
@@ -174,14 +194,14 @@ class _SyncAccountDialogState extends State<_SyncAccountDialog> {
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(_register ? 'Registrarme' : 'Iniciar sesión'),
+                : const Text('Iniciar sesión'),
           ),
         ] else ...[
           TextButton(
             onPressed: _busy
                 ? null
                 : () async {
-                    await widget.sync.signOut();
+                    await confirmAndSignOut(context, widget.sync);
                     if (context.mounted) Navigator.of(context).pop();
                   },
             child: const Text('Cerrar sesión'),

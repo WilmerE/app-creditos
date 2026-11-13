@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -34,13 +35,19 @@ class SupabaseDeltaSync extends ChangeNotifier
   Timer? _retryTimer;
   StreamSubscription<AuthState>? _authSubscription;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  final List<StreamSubscription<dynamic>> _localSubscriptions = [];
+  final Map<String, Future<bool>> _accountBindings = {};
+  Timer? _localChangeTimer;
   bool _networkAvailable = true;
   bool _running = false;
+  int _localChangeRevision = 0;
+  int _syncedRevision = 0;
 
   SyncPhase get phase => _phase;
   User? get currentUser => _client?.auth.currentUser;
   bool get isConfigured => _client != null;
   bool get isOffline => !_networkAvailable || _phase == SyncPhase.offline;
+  Stream<AuthState>? get authStateChanges => _client?.auth.onAuthStateChange;
 
   void start() {
     final client = _client;
@@ -53,10 +60,20 @@ class SupabaseDeltaSync extends ChangeNotifier
         unawaited(_refreshConnectivity());
       }
     });
-    _connectivitySubscription ??= _connectivity.onConnectivityChanged.listen(
-      _handleConnectivity,
-      onError: (Object _) => unawaited(synchronize()),
-    );
+    // connectivity_plus can throw while opening its native event stream on
+    // Windows. Periodic and lifecycle checks below still keep sync responsive.
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      _connectivitySubscription ??= _connectivity.onConnectivityChanged.listen(
+        _handleConnectivity,
+        onError: (Object _) => unawaited(synchronize()),
+      );
+    }
+    if (_localSubscriptions.isEmpty) {
+      _watchLocalChanges(_database.select(_database.clientsTable).watch());
+      _watchLocalChanges(_database.select(_database.capitalGroups).watch());
+      _watchLocalChanges(_database.select(_database.cardsTable).watch());
+      _watchLocalChanges(_database.select(_database.payments).watch());
+    }
     _retryTimer ??= Timer.periodic(
       const Duration(minutes: 2),
       (_) => unawaited(_refreshConnectivity()),
@@ -67,6 +84,19 @@ class SupabaseDeltaSync extends ChangeNotifier
           : SyncPhase.offline,
     );
     unawaited(_refreshConnectivity());
+  }
+
+  void _watchLocalChanges<T>(Stream<T> changes) {
+    _localSubscriptions.add(
+      changes.skip(1).listen((_) {
+        _localChangeRevision++;
+        _localChangeTimer?.cancel();
+        _localChangeTimer = Timer(
+          const Duration(milliseconds: 600),
+          () => unawaited(synchronize()),
+        );
+      }),
+    );
   }
 
   @override
@@ -126,6 +156,67 @@ class SupabaseDeltaSync extends ChangeNotifier
     return client.auth.signUp(email: email, password: password);
   }
 
+  Future<AuthResponse> register(
+    String fullName,
+    String email,
+    String password,
+  ) async {
+    final client = _requireOnlineClient();
+    return client.auth.signUp(
+      email: email,
+      password: password,
+      data: {'full_name': fullName.trim()},
+    );
+  }
+
+  /// Allows bootstrap registration only while the Supabase project has no user.
+  Future<bool> isRootAccountAvailable() async {
+    final client = _requireOnlineClient();
+    final result = await client.rpc('is_root_account_available');
+    return result == true;
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    final client = _requireOnlineClient();
+    await client.auth.resetPasswordForEmail(email);
+  }
+
+  Future<void> resendSignupConfirmation(String email) async {
+    final client = _requireOnlineClient();
+    await client.auth.resend(type: OtpType.signup, email: email);
+  }
+
+  Future<AuthResponse> verifyOtp({
+    required String email,
+    required String token,
+    required OtpType type,
+  }) async {
+    final client = _requireOnlineClient();
+    return client.auth.verifyOTP(email: email, token: token, type: type);
+  }
+
+  Future<UserResponse> updatePassword(String password) async {
+    final client = _requireOnlineClient();
+    return client.auth.updateUser(UserAttributes(password: password));
+  }
+
+  SupabaseClient _requireOnlineClient() {
+    final client = _client;
+    if (client == null) throw StateError('Supabase no está configurado.');
+    if (!_networkAvailable) {
+      throw StateError(
+        'No hay conexión a internet. Conéctate para autenticarte.',
+      );
+    }
+    return client;
+  }
+
+  Future<bool> isAccountAllowedLocally(String userId) => _isBoundTo(userId);
+
+  bool get hasPendingChanges =>
+      _localChangeRevision > _syncedRevision ||
+      _phase != SyncPhase.synchronized;
+
   Future<void> signOut() async {
     final client = _client;
     if (client == null) return;
@@ -151,6 +242,7 @@ class SupabaseDeltaSync extends ChangeNotifier
     }
     if (_running) return;
     _running = true;
+    final syncingRevision = _localChangeRevision;
     _setPhase(SyncPhase.syncing);
     try {
       if (!await _isBoundTo(user.id)) {
@@ -161,6 +253,7 @@ class SupabaseDeltaSync extends ChangeNotifier
       await _syncCapitalGroups(client, user.id);
       await _syncCards(client, user.id);
       await _syncPayments(client, user.id);
+      _syncedRevision = syncingRevision;
       _setPhase(SyncPhase.synchronized);
     } on Object {
       // Offline, RLS denial, or a missing server migration all leave SQLite
@@ -171,7 +264,10 @@ class SupabaseDeltaSync extends ChangeNotifier
     }
   }
 
-  Future<bool> _isBoundTo(String userId) async {
+  Future<bool> _isBoundTo(String userId) =>
+      _accountBindings.putIfAbsent(userId, () => _checkAndBindAccount(userId));
+
+  Future<bool> _checkAndBindAccount(String userId) async {
     const ownerPrefix = 'supabase_owner:';
     final owners = await (_database.select(
       _database.syncMetadata,
@@ -549,9 +645,13 @@ class SupabaseDeltaSync extends ChangeNotifier
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _localChangeTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_authSubscription?.cancel());
     unawaited(_connectivitySubscription?.cancel());
+    for (final subscription in _localSubscriptions) {
+      unawaited(subscription.cancel());
+    }
     super.dispose();
   }
 }

@@ -82,13 +82,14 @@ abstract final class PaymentPlanCalculator {
     required double requestedAmount,
     required String cardId,
     PlanOption? option,
+    List<PlanOption>? availableOptions,
     DateTime? startDate,
     DateTime? firstPaymentDate,
     DateTime? now,
     String Function()? idGenerator,
     bool isRenewal = false,
   }) {
-    final options = optionsFor(requestedAmount);
+    final options = availableOptions ?? optionsFor(requestedAmount);
     if (options.isEmpty) {
       throw const InvalidPlanAmountException(
         'No existe un plan para el monto solicitado.',
