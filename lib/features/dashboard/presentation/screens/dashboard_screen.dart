@@ -50,8 +50,15 @@ class DashboardScreen extends StatelessWidget {
   );
 }
 
-class DashboardView extends StatelessWidget {
+class DashboardView extends StatefulWidget {
   const DashboardView({super.key});
+
+  @override
+  State<DashboardView> createState() => _DashboardViewState();
+}
+
+class _DashboardViewState extends State<DashboardView> {
+  final _detailsKey = GlobalKey();
 
   static const _filters = [
     (
@@ -90,6 +97,20 @@ class DashboardView extends StatelessWidget {
       HistoryColors.locked,
     ),
   ];
+
+  void _selectFilterAndShowDetails(DashboardFilter filter) {
+    context.read<DashboardCubit>().selectFilter(filter);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final targetContext = _detailsKey.currentContext;
+      if (!mounted || targetContext == null) return;
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.06,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -297,9 +318,9 @@ class DashboardView extends StatelessWidget {
                           icon: Icons.today,
                           color: const Color(0xFF00695C),
                           selected: state.filter == DashboardFilter.todayDue,
-                          onTap: () => context
-                              .read<DashboardCubit>()
-                              .selectFilter(DashboardFilter.todayDue),
+                          onTap: () => _selectFilterAndShowDetails(
+                            DashboardFilter.todayDue,
+                          ),
                         ),
                       ),
                       for (final (filter, status, title, icon, color)
@@ -312,9 +333,7 @@ class DashboardView extends StatelessWidget {
                             icon: icon,
                             color: color,
                             selected: state.filter == filter,
-                            onTap: () => context
-                                .read<DashboardCubit>()
-                                .selectFilter(filter),
+                            onTap: () => _selectFilterAndShowDetails(filter),
                           ),
                         ),
                       SizedBox(
@@ -327,9 +346,9 @@ class DashboardView extends StatelessWidget {
                           icon: Icons.account_balance_wallet_outlined,
                           color: const Color(0xFF00695C),
                           selected: state.filter == DashboardFilter.cash,
-                          onTap: () => context
-                              .read<DashboardCubit>()
-                              .selectFilter(DashboardFilter.cash),
+                          onTap: () => _selectFilterAndShowDetails(
+                            DashboardFilter.cash,
+                          ),
                         ),
                       ),
                     ],
@@ -345,15 +364,21 @@ class DashboardView extends StatelessWidget {
                     'Al liquidar el saldo, la tarjeta pasa a En renovación; al emitir una nueva, la anterior queda Pagada.',
                   ),
                   const SizedBox(height: 24),
-                  Text(switch (state.filter) {
-                    DashboardFilter.active => 'Tarjetas activas / al día',
-                    DashboardFilter.debtor => 'Tarjetas en mora / deudoras',
-                    DashboardFilter.renewal => 'Tarjetas en renovación',
-                    DashboardFilter.paid => 'Tarjetas pagadas',
-                    DashboardFilter.deactivated => 'Tarjetas desactivadas',
-                    DashboardFilter.todayDue => 'Cobros de hoy',
-                    DashboardFilter.cash => 'Cuotas programadas o editadas hoy',
-                  }, style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    switch (state.filter) {
+                      DashboardFilter.active => 'Tarjetas activas / al día',
+                      DashboardFilter.debtor =>
+                        'Tarjetas en mora / deudoras',
+                      DashboardFilter.renewal => 'Tarjetas en renovación',
+                      DashboardFilter.paid => 'Tarjetas pagadas',
+                      DashboardFilter.deactivated => 'Tarjetas desactivadas',
+                      DashboardFilter.todayDue => 'Cobros de hoy',
+                      DashboardFilter.cash =>
+                        'Cuotas programadas o editadas hoy',
+                    },
+                    key: _detailsKey,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 12),
                   if (state.filter == DashboardFilter.todayDue)
                     _TodayDueList(payments: state.todayDuePayments)
