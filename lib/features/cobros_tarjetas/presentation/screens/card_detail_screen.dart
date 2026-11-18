@@ -170,6 +170,7 @@ class _CardDetailViewState extends State<CardDetailView> {
                 enterpriseConfig: enterpriseConfig,
                 payments: state.installments,
                 capitalPending: state.pendingBalance,
+                dueToday: state.totalDueToday,
                 lateFee: state.lateFee,
                 renewalColor: colorFromHex(card.colorHex)
                     .withValues(alpha: 0.18),

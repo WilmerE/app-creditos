@@ -108,6 +108,7 @@ void main() {
               payments: [partial],
               onAutoSave: (_) async {},
               capitalPending: 75,
+              dueToday: 85,
               lateFee: LateFee(days: 3, dueDate: DateTime(2026, 11, 5)),
             ),
           ),
@@ -122,7 +123,7 @@ void main() {
     );
     expect(
       find.text(
-        'Capital pendiente: Q75.00 + Mora acumulada: Q60.00 = Total a pagar hoy: Q135.00',
+        'Capital pendiente: Q75.00 + Mora acumulada: Q60.00 = Total a pagar hoy: Q85.00',
       ),
       findsOneWidget,
     );

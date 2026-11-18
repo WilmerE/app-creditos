@@ -7,6 +7,7 @@ import '../../../../injection_container.dart';
 import '../../../clientes/domain/entities/client.dart';
 import '../../../clientes/presentation/widgets/client_avatar.dart';
 import '../../../clientes/presentation/widgets/client_photo_picker.dart';
+import '../../../clientes/presentation/widgets/client_location_picker_dialog.dart';
 import '../../domain/services/payment_plan_calculator.dart';
 import '../bloc/card_creation_cubit.dart';
 
@@ -560,6 +561,33 @@ class _NewClientFormState extends State<_NewClientForm> {
           textCapitalization: TextCapitalization.sentences,
           decoration: _decoration('Dirección / Ubicación *'),
           onChanged: (v) => _update(_draft.copyWith(address: v)),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final location =
+                await showDialog<({double latitude, double longitude})>(
+                  context: context,
+                  builder: (_) => ClientLocationPickerDialog(
+                    initialLatitude: _draft.latitude,
+                    initialLongitude: _draft.longitude,
+                  ),
+                );
+            if (location != null && mounted) {
+              _update(
+                _draft.copyWith(
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                ),
+              );
+            }
+          },
+          icon: const Icon(Icons.location_on_outlined),
+          label: Text(
+            _draft.latitude == null || _draft.longitude == null
+                ? 'Seleccionar ubicación en el mapa'
+                : 'Ubicación: ${_draft.latitude!.toStringAsFixed(6)}, ${_draft.longitude!.toStringAsFixed(6)}',
+          ),
         ),
         const SizedBox(height: 12),
         TextFormField(

@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -22,6 +24,18 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
+        val localMapsApiKey = rootProject.file("../google_maps.local.json")
+            .takeIf { it.isFile }
+            ?.let { file ->
+                (JsonSlurper().parse(file) as? Map<*, *>)
+                    ?.get("GOOGLE_MAPS_API_KEY") as? String
+            }
+            .orEmpty()
+        manifestPlaceholders["googleMapsApiKey"] =
+            providers.gradleProperty("GOOGLE_MAPS_API_KEY")
+                .orElse(providers.environmentVariable("GOOGLE_MAPS_API_KEY"))
+                .orElse(localMapsApiKey)
+                .getOrElse("")
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`

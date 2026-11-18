@@ -77,6 +77,9 @@ class TodayDuePayment {
   double get remainingAmount =>
       (card.weeklyAmount - paidAmount).clamp(0, card.weeklyAmount);
 
+  double get totalDueToday =>
+      remainingAmount + (card.overdueDays > 0 ? card.outstandingMora : 0);
+
   bool get isPaid => remainingAmount <= 0.005;
 }
 

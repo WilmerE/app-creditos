@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:webview_flutter_windows/webview_flutter_windows.dart';
 
 const _googleMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
@@ -32,13 +33,16 @@ class _ClientLocationPickerDialogState
   Object? _error;
   bool _initialized = false;
   bool _gettingLocation = false;
+  GoogleMapController? _googleMapController;
 
   @override
   void initState() {
     super.initState();
     _latitude = widget.initialLatitude;
     _longitude = widget.initialLongitude;
-    if (defaultTargetPlatform != TargetPlatform.windows) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _initialized = true;
+    } else if (defaultTargetPlatform != TargetPlatform.windows) {
       _error = UnsupportedError('Google Maps picker requires Windows.');
     } else if (_googleMapsApiKey.isNotEmpty) {
       _initializeMap();
@@ -127,9 +131,17 @@ function sendPoint(point){
           timeLimit: Duration(seconds: 25),
         ),
       );
-      await _controller.executeScript(
-        'useCurrentLocation(${position.latitude},${position.longitude})',
-      );
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        final point = LatLng(position.latitude, position.longitude);
+        await _googleMapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(point, 17),
+        );
+        _selectPoint(point);
+      } else {
+        await _controller.executeScript(
+          'useCurrentLocation(${position.latitude},${position.longitude})',
+        );
+      }
     } on Object catch (error) {
       if (mounted) {
         final message = error is StateError
@@ -141,6 +153,14 @@ function sendPoint(point){
     } finally {
       if (mounted) setState(() => _gettingLocation = false);
     }
+  }
+
+  void _selectPoint(LatLng point) {
+    if (!mounted) return;
+    setState(() {
+      _latitude = point.latitude;
+      _longitude = point.longitude;
+    });
   }
 
   void _onMapMessage(Object? message) {
@@ -202,7 +222,36 @@ function sendPoint(point){
                 ),
               ),
             if (_initialized) const SizedBox(height: 8),
-            if (_googleMapsApiKey.isEmpty)
+            if (defaultTargetPlatform == TargetPlatform.android)
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(
+                        widget.initialLatitude ?? 14.6349,
+                        widget.initialLongitude ?? -90.5069,
+                      ),
+                      zoom: 16,
+                    ),
+                    onMapCreated: (controller) =>
+                        _googleMapController = controller,
+                    onTap: _selectPoint,
+                    markers: {
+                      if (_latitude != null && _longitude != null)
+                        Marker(
+                          markerId: const MarkerId('selected-location'),
+                          position: LatLng(_latitude!, _longitude!),
+                          draggable: true,
+                          onDragEnd: _selectPoint,
+                        ),
+                    },
+                    myLocationButtonEnabled: false,
+                    mapToolbarEnabled: false,
+                  ),
+                ),
+              )
+            else if (_googleMapsApiKey.isEmpty)
               const _MapMessage(
                 icon: Icons.key_off_outlined,
                 message: 'Configura GOOGLE_MAPS_API_KEY al compilar la aplicación para habilitar Google Maps.',

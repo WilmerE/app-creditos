@@ -180,10 +180,7 @@ void main() {
       expect(rows, hasLength(original.length + 2));
       expect(rows.last.isManual, isTrue);
       final now = DateTime.now();
-      expect(
-        rows.last.scheduledDate,
-        DateTime(now.year, now.month, now.day),
-      );
+      expect(rows.last.scheduledDate, DateTime(now.year, now.month, now.day));
       expect(rows.last.balanceAfter, 750);
       await expectLater(
         cards.deleteEmptyLastInstallment(cardId, rows[rows.length - 2].id),
@@ -270,7 +267,7 @@ void main() {
       final state = await updated;
       expect(state.pendingBalance, 665);
       expect(state.lateFee.amount, 0);
-      expect(state.totalDueToday, 665);
+      expect(state.totalDueToday, 0);
     },
   );
 
@@ -408,7 +405,7 @@ void main() {
     expect(cubit.state.lateFee.days, 1);
     expect(cubit.state.lateFee.amount, 20);
     expect(find.textContaining('Atraso: 1 días'), findsOneWidget);
-    expect(find.text('Total hoy Q770.00'), findsOneWidget);
+    expect(find.text('Total hoy Q20.00'), findsOneWidget);
     expect(tester.takeException(), isNull);
     now = DateTime(today.year, today.month, today.day + 1);
     await tester.runAsync(
@@ -416,8 +413,8 @@ void main() {
     );
     await tester.pump();
     expect(cubit.state.lateFee.days, 2);
-    expect(cubit.state.totalDueToday, 790);
+    expect(cubit.state.totalDueToday, 40);
     expect(find.textContaining('Atraso: 2 días'), findsOneWidget);
-    expect(find.text('Total hoy Q790.00'), findsOneWidget);
+    expect(find.text('Total hoy Q40.00'), findsOneWidget);
   });
 }

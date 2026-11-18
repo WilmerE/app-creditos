@@ -61,6 +61,7 @@ class TarjetaDigitalWidget extends StatefulWidget {
     this.onDeleteRow,
     this.weeklyAmount,
     this.capitalPending,
+    this.dueToday,
     this.lateFee,
     this.enterpriseConfig = const EnterpriseConfig(),
     this.renewalColor = const Color(0xFFFFF1D6),
@@ -77,6 +78,7 @@ class TarjetaDigitalWidget extends StatefulWidget {
   final Future<void> Function(String id)? onDeleteRow;
   final double? weeklyAmount;
   final double? capitalPending;
+  final double? dueToday;
   final LateFee? lateFee;
   final EnterpriseConfig enterpriseConfig;
   final Color renewalColor;
@@ -277,6 +279,7 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
                     if (widget.capitalPending != null && widget.lateFee != null)
                       _BalanceSummary(
                         capital: widget.capitalPending!,
+                        dueToday: widget.dueToday ?? widget.capitalPending!,
                         lateFee: widget.lateFee!,
                         readOnly: widget.readOnly,
                       ),
@@ -540,9 +543,15 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
 }
 
 class _BalanceSummary extends StatelessWidget {
-  const _BalanceSummary({required this.capital, required this.lateFee, this.readOnly = false});
+  const _BalanceSummary({
+    required this.capital,
+    required this.dueToday,
+    required this.lateFee,
+    this.readOnly = false,
+  });
 
   final double capital;
+  final double dueToday;
   final LateFee lateFee;
   final bool readOnly;
 
@@ -609,7 +618,7 @@ class _BalanceSummary extends StatelessWidget {
           Text(
             'Capital pendiente: ${CurrencyFormatter.formatGtq(capital)} + '
             'Mora acumulada: ${CurrencyFormatter.formatGtq(lateFee.amount)} = '
-            'Total a pagar hoy: ${CurrencyFormatter.formatGtq(capital + lateFee.amount)}',
+            'Total a pagar hoy: ${CurrencyFormatter.formatGtq(dueToday)}',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ],

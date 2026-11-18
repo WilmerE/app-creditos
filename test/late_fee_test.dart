@@ -20,12 +20,20 @@ void main() {
         createdAt: DateTime(2026),
       );
       final state = CardDetailState(
+        today: DateTime(2026),
         card: card,
         installments: [
           PaymentInstallment(
-            id: 'a',
+            id: 'today',
             cardId: 'card',
             scheduledDate: DateTime(2026),
+            amountPaid: 20,
+            balanceAfter: 280,
+          ),
+          PaymentInstallment(
+            id: 'a',
+            cardId: 'card',
+            scheduledDate: DateTime(2025, 12, 25),
             amountPaid: 60,
             moraCents: 4000,
             balanceAfter: 280,
@@ -33,10 +41,10 @@ void main() {
         ],
         lateFee: const LateFee(days: 2, rate: 30),
       );
-      expect(state.totalPaid, 20);
-      expect(state.pendingBalance, 280);
+      expect(state.totalPaid, 40);
+      expect(state.pendingBalance, 260);
       expect(state.lateFee.amount, 60);
-      expect(state.totalDueToday, 340);
+      expect(state.totalDueToday, 140);
     },
   );
 }

@@ -29,6 +29,8 @@ class NewClientDraft extends Equatable {
     this.dpi = '',
     this.alias = '',
     this.photoPath,
+    this.latitude,
+    this.longitude,
   });
 
   final String name;
@@ -37,6 +39,8 @@ class NewClientDraft extends Equatable {
   final String dpi;
   final String alias;
   final String? photoPath;
+  final double? latitude;
+  final double? longitude;
 
   bool get phoneValid =>
       phone.trim().isEmpty || _phoneRegex.hasMatch(phone.trim());
@@ -53,6 +57,8 @@ class NewClientDraft extends Equatable {
     String? dpi,
     String? alias,
     String? Function()? photoPath,
+    double? latitude,
+    double? longitude,
   }) {
     return NewClientDraft(
       name: name ?? this.name,
@@ -61,11 +67,22 @@ class NewClientDraft extends Equatable {
       dpi: dpi ?? this.dpi,
       alias: alias ?? this.alias,
       photoPath: photoPath != null ? photoPath() : this.photoPath,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
     );
   }
 
   @override
-  List<Object?> get props => [name, address, phone, dpi, alias, photoPath];
+  List<Object?> get props => [
+    name,
+    address,
+    phone,
+    dpi,
+    alias,
+    photoPath,
+    latitude,
+    longitude,
+  ];
 }
 
 class CardCreationState extends Equatable {
@@ -308,8 +325,8 @@ class CardCreationCubit extends Cubit<CardCreationState> {
       emit(
         state.copyWith(
           status: CardCreationStatus.failure,
-        errorMessage: () =>
-            'No se pudo cargar la lista de clientes y planes de crédito.',
+          errorMessage: () =>
+              'No se pudo cargar la lista de clientes y planes de crédito.',
         ),
       );
     }
@@ -442,6 +459,8 @@ class CardCreationCubit extends Cubit<CardCreationState> {
                 : [draft.phone.trim()],
             dpi: draft.dpi.trim().isEmpty ? null : draft.dpi.trim(),
             alias: draft.alias.trim().isEmpty ? null : draft.alias.trim(),
+            latitude: draft.latitude,
+            longitude: draft.longitude,
             createdAt: now,
             updatedAt: now,
           ),

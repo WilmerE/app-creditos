@@ -28,12 +28,12 @@ import 'package:creditos/features/clientes/domain/repositories/client_repository
     as _i743;
 import 'package:creditos/features/clientes/presentation/bloc/client_bloc.dart'
     as _i858;
+import 'package:creditos/features/cobros_tarjetas/data/credit_plan_repository.dart'
+    as _i88;
 import 'package:creditos/features/cobros_tarjetas/data/datasources/local/credit_card_local_data_source.dart'
     as _i598;
 import 'package:creditos/features/cobros_tarjetas/data/datasources/local/payment_local_data_source.dart'
     as _i950;
-import 'package:creditos/features/cobros_tarjetas/data/credit_plan_repository.dart'
-    as _i704;
 import 'package:creditos/features/cobros_tarjetas/data/repositories/credit_card_repository_impl.dart'
     as _i478;
 import 'package:creditos/features/cobros_tarjetas/domain/repositories/credit_card_repository.dart'
@@ -62,9 +62,6 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i915.ClientPhotoStorage(),
     );
     gh.lazySingleton<_i331.AppDatabase>(() => appModule.database);
-    gh.lazySingleton<_i704.CreditPlanRepository>(
-      () => _i704.CreditPlanRepository(gh<_i331.AppDatabase>()),
-    );
     gh.lazySingleton<_i255.CapitalGroupRepository>(
       () => _i799.DriftCapitalGroupRepository(gh<_i331.AppDatabase>()),
     );
@@ -76,6 +73,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i770.ClientLocalDataSource>(
       () => _i770.ClientLocalDataSource(gh<_i331.AppDatabase>()),
+    );
+    gh.lazySingleton<_i88.CreditPlanRepository>(
+      () => _i88.CreditPlanRepository(gh<_i331.AppDatabase>()),
     );
     gh.lazySingleton<_i598.CreditCardLocalDataSource>(
       () => _i598.CreditCardLocalDataSource(gh<_i331.AppDatabase>()),
@@ -120,7 +120,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i313.CreditCardCreation>(),
         gh<_i390.CreateCardWithNewClient>(),
         capitalGroupRepository: gh<_i255.CapitalGroupRepository>(),
-        planRepository: gh<_i704.CreditPlanRepository>(),
+        planRepository: gh<_i88.CreditPlanRepository>(),
       ),
     );
     return this;

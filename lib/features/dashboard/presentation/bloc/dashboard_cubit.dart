@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../../core/database/app_database.dart';
+import '../../../../core/notifications/local_system_notification_service.dart';
 import '../../data/operational_notifications_local_data_source.dart';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -82,9 +85,16 @@ class DashboardState {
         (total, card) =>
             total +
             card.payments
-                    .where((p) => !p.isManual && _isToday(p.scheduledDate))
-                    .length *
-                card.weeklyAmount,
+                .where((p) => !p.isManual && _isToday(p.scheduledDate))
+                .fold<double>(
+                  0,
+                  (sum, payment) =>
+                      sum +
+                      (card.weeklyAmount -
+                              (payment.amountPaid - payment.moraPaid))
+                          .clamp(0, card.weeklyAmount),
+                ) +
+            (card.overdueDays > 0 ? card.outstandingMora : 0),
       );
 
   double get estimatedPaidToday => selectedCapitalCards
@@ -167,6 +177,7 @@ class DashboardCubit extends Cubit<DashboardState> {
     emit(state.copyWith(status: DashboardStatus.loading, today: _clock()));
     if (database != null) {
       final alerts = OperationalNotificationsLocalDataSource(database!);
+      unawaited(_scheduleDailyCollectionReminder(database!));
       alerts.evaluateCollectionCutoff(now: _clock());
       _cutoffTimer?.cancel();
       _cutoffTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -207,6 +218,27 @@ class DashboardCubit extends Cubit<DashboardState> {
     _scheduleMidnight();
   }
 
+  Future<void> _scheduleDailyCollectionReminder(AppDatabase database) async {
+    try {
+      final config = await (database.select(
+        database.enterpriseConfigs,
+      )..where((row) => row.id.equals(1))).getSingleOrNull();
+      final deadline =
+          (config?.collectionDeadlineHour ?? 18) * 60 +
+          (config?.collectionDeadlineMinute ?? 0) -
+          (config?.collectionReminderMinutes ?? 60);
+      final bounded = deadline.clamp(0, 23 * 60 + 59);
+      await LocalSystemNotificationService.instance
+          .scheduleDailyCollectionReminder(
+            hour: bounded ~/ 60,
+            minute: bounded % 60,
+          );
+    } on Object catch (error, stackTrace) {
+      debugPrint('No se pudo programar el recordatorio diario: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   void selectFilter(DashboardFilter filter) {
     emit(state.copyWith(filter: filter, today: _clock()));
   }
@@ -224,7 +256,6 @@ class DashboardCubit extends Cubit<DashboardState> {
 
   void _scheduleMidnight() {
     _midnight?.cancel();
-    _cutoffTimer?.cancel();
     final now = _clock();
     final next = DateTime(now.year, now.month, now.day + 1);
     _midnight = Timer(next.difference(now), () {
@@ -235,6 +266,7 @@ class DashboardCubit extends Cubit<DashboardState> {
   @override
   Future<void> close() async {
     _midnight?.cancel();
+    _cutoffTimer?.cancel();
     await _capitalGroupsSubscription?.cancel();
     await _subscription?.cancel();
     await super.close();

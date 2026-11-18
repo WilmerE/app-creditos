@@ -35,7 +35,30 @@ class CardDetailState extends Equatable {
   double get pendingBalance =>
       ((card?.totalToPay ?? 0) - totalPaid).clamp(0, double.infinity);
 
-  double get totalDueToday => pendingBalance + lateFee.amount;
+  double get totalDueToday {
+    final now = today ?? DateTime.now();
+    final duePrincipal = installments.fold<double>(0, (sum, installment) {
+      final scheduled = installment.scheduledDate?.toLocal();
+      if (scheduled == null || installment.isManual) return sum;
+      final dueDay = DateTime(scheduled.year, scheduled.month, scheduled.day);
+      final currentDay = DateTime(now.year, now.month, now.day);
+      if (dueDay != currentDay) return sum;
+      final remaining = (card?.weeklyAmount ?? 0) - installment.principalPaid;
+      return sum + remaining.clamp(0, card?.weeklyAmount ?? 0);
+    });
+    final hasOverdue = installments.any((installment) {
+      final scheduled = installment.scheduledDate?.toLocal();
+      return scheduled != null &&
+          !installment.isManual &&
+          DateTime(
+            scheduled.year,
+            scheduled.month,
+            scheduled.day,
+          ).isBefore(DateTime(now.year, now.month, now.day)) &&
+          installment.principalPaid < (card?.weeklyAmount ?? 0) - 0.005;
+    });
+    return duePrincipal + (hasOverdue ? lateFee.amount : 0);
+  }
 
   CardDetailState copyWith({
     CardDetailStatus? status,

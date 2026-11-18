@@ -59,6 +59,13 @@ class DashboardView extends StatefulWidget {
 
 class _DashboardViewState extends State<DashboardView> {
   final _detailsKey = GlobalKey();
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   static const _filters = [
     (
@@ -103,9 +110,20 @@ class _DashboardViewState extends State<DashboardView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final targetContext = _detailsKey.currentContext;
       if (!mounted || targetContext == null) return;
-      Scrollable.ensureVisible(
-        targetContext,
-        alignment: 0.06,
+      if (!_scrollController.hasClients) return;
+      final target = targetContext.findRenderObject();
+      final viewport = _scrollController.position.context.storageContext
+          .findRenderObject();
+      if (target is! RenderBox || viewport is! RenderBox) return;
+      final targetTop = target.localToGlobal(Offset.zero).dy;
+      final viewportTop = viewport.localToGlobal(Offset.zero).dy;
+      final destination =
+          (_scrollController.offset + targetTop - viewportTop - 16).clamp(
+            0.0,
+            _scrollController.position.maxScrollExtent,
+          );
+      _scrollController.animateTo(
+        destination,
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeInOut,
       );
@@ -259,6 +277,7 @@ class _DashboardViewState extends State<DashboardView> {
                   ? (constraints.maxWidth - 48) / 2
                   : constraints.maxWidth - 32;
               return ListView(
+                controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 children: [
                   _CollectionDeadlineBanner(state: state),
@@ -346,9 +365,8 @@ class _DashboardViewState extends State<DashboardView> {
                           icon: Icons.account_balance_wallet_outlined,
                           color: const Color(0xFF00695C),
                           selected: state.filter == DashboardFilter.cash,
-                          onTap: () => _selectFilterAndShowDetails(
-                            DashboardFilter.cash,
-                          ),
+                          onTap: () =>
+                              _selectFilterAndShowDetails(DashboardFilter.cash),
                         ),
                       ),
                     ],
@@ -367,8 +385,7 @@ class _DashboardViewState extends State<DashboardView> {
                   Text(
                     switch (state.filter) {
                       DashboardFilter.active => 'Tarjetas activas / al día',
-                      DashboardFilter.debtor =>
-                        'Tarjetas en mora / deudoras',
+                      DashboardFilter.debtor => 'Tarjetas en mora / deudoras',
                       DashboardFilter.renewal => 'Tarjetas en renovación',
                       DashboardFilter.paid => 'Tarjetas pagadas',
                       DashboardFilter.deactivated => 'Tarjetas desactivadas',
@@ -598,7 +615,9 @@ class _OperationalNotificationsDialogState
           stream: widget.source.watchAll(),
           builder: (context, snapshot) {
             final notifications = snapshot.data ?? const [];
-            final unreadCount = notifications.where((item) => !item.isRead).length;
+            final unreadCount = notifications
+                .where((item) => !item.isRead)
+                .length;
             final visible = _unreadOnly
                 ? notifications.where((item) => !item.isRead).toList()
                 : notifications;
@@ -647,16 +666,17 @@ class _OperationalNotificationsDialogState
                       ButtonSegment(value: true, label: Text('No leídas')),
                     ],
                     selected: {_unreadOnly},
-                    onSelectionChanged: (selection) => setState(
-                      () => _unreadOnly = selection.single,
-                    ),
+                    onSelectionChanged: (selection) =>
+                        setState(() => _unreadOnly = selection.single),
                   ),
                 ),
                 const Divider(height: 1),
                 Expanded(
                   child: snapshot.hasError
                       ? const Center(
-                          child: Text('No se pudieron cargar las notificaciones.'),
+                          child: Text(
+                            'No se pudieron cargar las notificaciones.',
+                          ),
                         )
                       : visible.isEmpty
                       ? Center(
@@ -672,7 +692,8 @@ class _OperationalNotificationsDialogState
                           child: ListView.separated(
                             controller: _listController,
                             itemCount: visible.length,
-                            separatorBuilder: (_, _) => const Divider(height: 1),
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
                             itemBuilder: (context, index) {
                               final notification = visible[index];
                               final urgent =
@@ -937,8 +958,8 @@ class _TodayDueTile extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Abonado: ${CurrencyFormatter.formatGtq(due.paidAmount)} / '
-            'Resta: ${CurrencyFormatter.formatGtq(due.remainingAmount)}',
+            'Cuota de hoy: ${CurrencyFormatter.formatGtq(due.remainingAmount)}'
+            '${due.card.overdueDays > 0 ? ' · Mora: ${CurrencyFormatter.formatGtq(due.card.outstandingMora)}' : ''}',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
