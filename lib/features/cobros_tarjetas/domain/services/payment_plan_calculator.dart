@@ -105,18 +105,26 @@ abstract final class PaymentPlanCalculator {
     final start = startDate != null
         ? DateTime(startDate.year, startDate.month, startDate.day)
         : DateHelpers.nextMonday(now ?? DateTime.now());
-    final first = firstPaymentDate != null
+    final requestedFirst = firstPaymentDate != null
         ? DateTime(
             firstPaymentDate.year,
             firstPaymentDate.month,
             firstPaymentDate.day,
           )
         : DateTime(start.year, start.month, start.day + 5);
-    if (first.isBefore(start)) {
+    if (requestedFirst.isBefore(start)) {
       throw const InvalidPlanAmountException(
         'La fecha del primer pago no puede ser anterior al inicio del crédito.',
       );
     }
+    // Custom dates select a week; every scheduled payment is normalized to
+    // the Saturday in that week.
+    final first = DateTime(
+      requestedFirst.year,
+      requestedFirst.month,
+      requestedFirst.day +
+          (DateTime.saturday - requestedFirst.weekday) % 7,
+    );
     final newId = idGenerator ?? () => const Uuid().v4();
 
     final installments = [

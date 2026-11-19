@@ -110,20 +110,9 @@ class _DashboardViewState extends State<DashboardView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final targetContext = _detailsKey.currentContext;
       if (!mounted || targetContext == null) return;
-      if (!_scrollController.hasClients) return;
-      final target = targetContext.findRenderObject();
-      final viewport = _scrollController.position.context.storageContext
-          .findRenderObject();
-      if (target is! RenderBox || viewport is! RenderBox) return;
-      final targetTop = target.localToGlobal(Offset.zero).dy;
-      final viewportTop = viewport.localToGlobal(Offset.zero).dy;
-      final destination =
-          (_scrollController.offset + targetTop - viewportTop - 16).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          );
-      _scrollController.animateTo(
-        destination,
+      Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0,
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeInOut,
       );

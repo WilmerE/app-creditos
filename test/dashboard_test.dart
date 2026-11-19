@@ -454,8 +454,11 @@ void main() {
         expect(find.textContaining('Caja estimada:'), findsOneWidget);
         await tester.ensureVisible(find.text('En mora / Deudoras'));
         await tester.tap(find.text('En mora / Deudoras'));
-        await tester.pump();
+        await tester.pumpAndSettle();
         expect(cubit.state.filter, DashboardFilter.debtor);
+        final detailsHeading = find.text('Tarjetas en mora / deudoras');
+        expect(detailsHeading, findsOneWidget);
+        expect(tester.getTopLeft(detailsHeading).dy, lessThan(180));
         expect(
           cubit.state.visibleCards.every((c) => c.status == CardStatus.debtor),
           isTrue,

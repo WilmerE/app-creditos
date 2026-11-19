@@ -83,7 +83,7 @@ void main() {
       expect(p.projectedBalance(5), 0);
     });
 
-    test('preserves custom dates and repeats weekly across months', () {
+    test('aligns custom first payment dates to Saturday across months', () {
       final result = PaymentPlanCalculator.calculate(
         requestedAmount: 500,
         cardId: 'x',
@@ -91,9 +91,16 @@ void main() {
         firstPaymentDate: DateTime(2024, 2, 29, 10),
       );
       expect(result.startDate, DateTime(2024, 2, 27));
-      expect(result.installments.first.scheduledDate, DateTime(2024, 2, 29));
-      expect(result.installments[1].scheduledDate, DateTime(2024, 3, 7));
-      expect(result.installments.last.scheduledDate, DateTime(2024, 4, 4));
+      expect(result.installments.first.scheduledDate, DateTime(2024, 3, 2));
+      expect(result.installments[1].scheduledDate, DateTime(2024, 3, 9));
+      expect(result.installments.last.scheduledDate, DateTime(2024, 4, 6));
+      expect(
+        result.installments.every(
+          (installment) =>
+              installment.scheduledDate!.weekday == DateTime.saturday,
+        ),
+        isTrue,
+      );
       expect(
         () => PaymentPlanCalculator.calculate(
           requestedAmount: 500,
@@ -143,7 +150,7 @@ void main() {
       expect(await db.select(db.payments).get(), hasLength(6));
     });
 
-    test('persists exact custom dates for an existing client', () async {
+    test('persists Saturday dates for a custom schedule', () async {
       final id = await creation(
         clientId: 'c1',
         requestedAmount: 500,
@@ -153,8 +160,12 @@ void main() {
       );
       expect((await repo.getCard(id))!.startDate, DateTime(2024, 2, 27));
       final rows = await repo.watchInstallments(id).first;
-      expect(rows.first.scheduledDate, DateTime(2024, 2, 29));
-      expect(rows[1].scheduledDate, DateTime(2024, 3, 7));
+      expect(rows.first.scheduledDate, DateTime(2024, 3, 2));
+      expect(rows[1].scheduledDate, DateTime(2024, 3, 9));
+      expect(
+        rows.every((row) => row.scheduledDate!.weekday == DateTime.saturday),
+        isTrue,
+      );
     });
 
     test('blocks renewal while the previous card has a balance', () async {
@@ -346,8 +357,12 @@ void main() {
       db.payments,
     )..orderBy([(p) => OrderingTerm.asc(p.scheduledDate)])).get();
     expect(card.startDate, DateTime(2024, 2, 27));
-    expect(installments.first.scheduledDate, DateTime(2024, 2, 29));
-    expect(installments[1].scheduledDate, DateTime(2024, 3, 7));
+    expect(installments.first.scheduledDate, DateTime(2024, 3, 2));
+    expect(installments[1].scheduledDate, DateTime(2024, 3, 9));
+    expect(
+      installments.every((row) => row.scheduledDate.weekday == DateTime.saturday),
+      isTrue,
+    );
 
     // A failing card creation rolls the client back.
     final failing = CreateCardWithNewClient(
