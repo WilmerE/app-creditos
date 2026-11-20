@@ -28,6 +28,31 @@ void main() {
               updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', CURRENT_TIMESTAMP) AS INTEGER))
             )
           ''');
+            database.execute('''
+              CREATE TABLE clients (
+                id TEXT NOT NULL PRIMARY KEY, full_name TEXT NOT NULL,
+                address TEXT NOT NULL, dpi TEXT, dpi_folder TEXT, alias TEXT,
+                photo_path TEXT, created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL, deleted_at INTEGER
+              )
+            ''');
+            database.execute('''
+              CREATE TABLE client_phones (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL, phone_number TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0
+              )
+            ''');
+            database.execute('''
+              CREATE TABLE cards (
+                id TEXT NOT NULL PRIMARY KEY, client_id TEXT NOT NULL,
+                requested_amount REAL NOT NULL, delivered_amount REAL NOT NULL,
+                total_installments INTEGER NOT NULL, weekly_amount REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                color_hex TEXT NOT NULL DEFAULT '#800020',
+                start_date INTEGER NOT NULL, created_at INTEGER NOT NULL
+              )
+            ''');
             database.execute(
               "INSERT INTO payments (id, card_id, scheduled_date, amount_paid, balance_after, updated_at) VALUES ('paid', 'card', 1700000000, 25, 75, 1700100000), ('empty', 'card', 1700600000, 0, 75, 1700100000)",
             );
@@ -71,6 +96,31 @@ void main() {
               'CREATE TABLE payments (id TEXT NOT NULL PRIMARY KEY)',
             );
             database.execute('''
+              CREATE TABLE clients (
+                id TEXT NOT NULL PRIMARY KEY, full_name TEXT NOT NULL,
+                address TEXT NOT NULL, dpi TEXT, dpi_folder TEXT, alias TEXT,
+                photo_path TEXT, created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL, deleted_at INTEGER
+              )
+            ''');
+            database.execute('''
+              CREATE TABLE client_phones (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL, phone_number TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0
+              )
+            ''');
+            database.execute('''
+              CREATE TABLE cards (
+                id TEXT NOT NULL PRIMARY KEY, client_id TEXT NOT NULL,
+                requested_amount REAL NOT NULL, delivered_amount REAL NOT NULL,
+                total_installments INTEGER NOT NULL, weekly_amount REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                color_hex TEXT NOT NULL DEFAULT '#800020',
+                start_date INTEGER NOT NULL, created_at INTEGER NOT NULL
+              )
+            ''');
+            database.execute('''
             CREATE TABLE enterprise_configs (
               id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL,
               phone TEXT NOT NULL, nit TEXT NOT NULL, email TEXT NOT NULL,
@@ -100,8 +150,20 @@ void main() {
     () async {
       final directory = await Directory.systemTemp.createTemp('mora_v8_test_');
       final file = File('${directory.path}\\test.sqlite');
-      addTearDown(() => directory.delete(recursive: true));
+      AppDatabase? activeDatabase;
+      Future<void> closeActiveDatabase() async {
+        final database = activeDatabase;
+        if (database == null) return;
+        activeDatabase = null;
+        await database.close();
+      }
+
+      addTearDown(() async {
+        await closeActiveDatabase();
+        await _deleteDirectoryWithRetries(directory);
+      });
       var db = AppDatabase.forTesting(NativeDatabase(file));
+      activeDatabase = db;
       final now = DateTime.now();
       await db
           .into(db.clientsTable)
@@ -163,17 +225,43 @@ void main() {
       await db.customStatement('DROP TABLE payment_changes');
       await db.customStatement('DROP TABLE mora_applications');
       await db.customStatement('DROP TABLE mora_tracking');
+      await db.customStatement('DROP TABLE operational_notifications');
+      await db.customStatement('DROP TABLE capital_groups');
+      await db.customStatement('ALTER TABLE clients DROP COLUMN latitude');
+      await db.customStatement('ALTER TABLE clients DROP COLUMN longitude');
+      await db.customStatement('ALTER TABLE cards DROP COLUMN folder_id');
       await db.customStatement('ALTER TABLE payments DROP COLUMN mora_cents');
       await db.customStatement('PRAGMA user_version = 8');
-      await db.close();
+      await closeActiveDatabase();
       db = AppDatabase.forTesting(NativeDatabase(file));
+      activeDatabase = db;
       final payment = await db.select(db.payments).getSingle();
       expect(payment.amountPaid, 25);
       expect(payment.moraCents, 0);
       expect((await db.select(db.mora).getSingle()).pagado, isFalse);
       expect((await db.select(db.enterpriseConfigs).getSingle()).mora, 35);
       expect(await db.select(db.moraApplications).get(), isEmpty);
-      await db.close();
     },
   );
+}
+
+Future<void> _deleteDirectoryWithRetries(Directory directory) async {
+  const retryDelays = [
+    Duration(milliseconds: 50),
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 400),
+  ];
+
+  for (var attempt = 0; ; attempt++) {
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+      return;
+    } on FileSystemException catch (error, stackTrace) {
+      if (!Platform.isWindows || attempt >= retryDelays.length) {
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      await Future<void>.delayed(retryDelays[attempt]);
+    }
+  }
 }

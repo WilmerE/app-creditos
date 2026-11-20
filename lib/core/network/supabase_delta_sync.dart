@@ -44,6 +44,7 @@ class SupabaseDeltaSync extends ChangeNotifier
   int _syncedRevision = 0;
 
   SyncPhase get phase => _phase;
+  SupabaseClient? get client => _client;
   User? get currentUser => _client?.auth.currentUser;
   bool get isConfigured => _client != null;
   bool get isOffline => !_networkAvailable || _phase == SyncPhase.offline;

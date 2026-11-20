@@ -1,18 +1,15 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../features/cobros_tarjetas/domain/entities/credit_card.dart';
-import '../../features/cobros_tarjetas/domain/entities/payment_installment.dart';
-import '../../features/cobros_tarjetas/domain/services/payment_plan_calculator.dart';
-import 'app_database.dart';
+import 'package:creditos/core/database/app_database.dart';
+import 'package:creditos/features/cobros_tarjetas/domain/entities/credit_card.dart';
+import 'package:creditos/features/cobros_tarjetas/domain/entities/payment_installment.dart';
+import 'package:creditos/features/cobros_tarjetas/domain/services/payment_plan_calculator.dart';
 
-enum DatabaseSeedResult { inserted, alreadyInserted }
-
-class DatabaseSeed {
-  const DatabaseSeed(this._database);
+class DashboardFixture {
+  const DashboardFixture(this._database);
 
   final AppDatabase _database;
-  static const _marker = 'database_seed_guatemala_v1';
   static const _uuid = Uuid();
 
   static const _firstNames = [
@@ -72,30 +69,11 @@ class DatabaseSeed {
   static const _amounts = [500.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0];
   static const _colors = ['#800020', '#1565C0', '#2E7D32', '#EF6C00'];
 
-  /// Seeds an empty business database once. All records and the marker commit
-  /// together; any failure leaves the database unchanged.
-  Future<DatabaseSeedResult> run({DateTime? now}) {
+  /// Creates predictable local records used only by dashboard tests.
+  Future<void> populate({DateTime? now}) {
     final date = now ?? DateTime.now();
     final today = DateTime(date.year, date.month, date.day);
     return _database.transaction(() async {
-      final marker = await (_database.select(
-        _database.syncMetadata,
-      )..where((row) => row.key.equals(_marker))).getSingleOrNull();
-      if (marker != null) return DatabaseSeedResult.alreadyInserted;
-
-      final existing = await _database
-          .customSelect(
-            'SELECT EXISTS(SELECT 1 FROM clients) OR '
-            'EXISTS(SELECT 1 FROM client_phones) OR '
-            'EXISTS(SELECT 1 FROM cards) OR EXISTS(SELECT 1 FROM payments) AS occupied',
-          )
-          .getSingle();
-      if (existing.read<int>('occupied') != 0) {
-        throw StateError(
-          'Los datos de prueba solo pueden cargarse en una base sin clientes, tarjetas ni pagos.',
-        );
-      }
-
       final clients = <ClientsTableCompanion>[];
       final phones = <ClientPhonesCompanion>[];
       final cards = <CardsTableCompanion>[];
@@ -236,7 +214,7 @@ class DatabaseSeed {
                 balanceAfter: balance,
                 paymentType: Value(type.name),
                 receiptNumber: Value(
-                  type == PaymentType.cash ? null : 'SEED-$cardId-$i',
+                  type == PaymentType.cash ? null : 'FIXTURE-$cardId-$i',
                 ),
                 isRenewal: Value(isRenewal),
                 updatedAt: Value(paid > 0 ? item.scheduledDate! : start),
@@ -255,12 +233,7 @@ class DatabaseSeed {
         batch.insertAll(_database.payments, payments);
         batch.insertAll(_database.mora, mora);
         batch.insertAll(_database.moraTracking, tracking);
-        batch.insert(
-          _database.syncMetadata,
-          SyncMetadataCompanion.insert(key: _marker),
-        );
       });
-      return DatabaseSeedResult.inserted;
     });
   }
 

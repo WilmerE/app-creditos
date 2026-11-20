@@ -243,18 +243,15 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 7) {
         if (from >= 2) {
-          await migrator.alterTable(
-            TableMigration(
-              payments,
-              newColumns: [
-                payments.createdAt,
-                payments.createdAtEstimated,
-                payments.isManual,
-                payments.position,
-                payments.moraCents,
-              ],
-            ),
+          await _addColumnIfMissing(migrator, payments, payments.createdAt);
+          await _addColumnIfMissing(
+            migrator,
+            payments,
+            payments.createdAtEstimated,
           );
+          await _addColumnIfMissing(migrator, payments, payments.isManual);
+          await _addColumnIfMissing(migrator, payments, payments.position);
+          await _addColumnIfMissing(migrator, payments, payments.moraCents);
         }
         await customStatement(
           'UPDATE payments SET created_at = scheduled_date, '
@@ -264,7 +261,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await migrator.createTable(mora);
         if (from >= 6) {
-          await migrator.addColumn(enterpriseConfigs, enterpriseConfigs.mora);
+          await _addColumnIfMissing(
+            migrator,
+            enterpriseConfigs,
+            enterpriseConfigs.mora,
+          );
         }
       }
       if (from < 9) {
@@ -272,29 +273,40 @@ class AppDatabase extends _$AppDatabase {
         await migrator.createTable(moraApplications);
         await migrator.createTable(paymentChanges);
         if (from >= 7) {
-          await migrator.addColumn(payments, payments.moraCents);
+          await _addColumnIfMissing(migrator, payments, payments.moraCents);
         }
         await _setMoraBaseline();
         await _createMoraIndex();
       }
       if (from < 10) {
-        await migrator.addColumn(clientsTable, clientsTable.latitude);
-        await migrator.addColumn(clientsTable, clientsTable.longitude);
+        await _addColumnIfMissing(
+          migrator,
+          clientsTable,
+          clientsTable.latitude,
+        );
+        await _addColumnIfMissing(
+          migrator,
+          clientsTable,
+          clientsTable.longitude,
+        );
       }
       if (from < 11) {
         await migrator.createTable(capitalGroups);
-        await migrator.addColumn(cardsTable, cardsTable.folderId);
+        await _addColumnIfMissing(migrator, cardsTable, cardsTable.folderId);
       }
       if (from < 12) {
-        await migrator.addColumn(
+        await _addColumnIfMissing(
+          migrator,
           enterpriseConfigs,
           enterpriseConfigs.collectionDeadlineHour,
         );
-        await migrator.addColumn(
+        await _addColumnIfMissing(
+          migrator,
           enterpriseConfigs,
           enterpriseConfigs.collectionDeadlineMinute,
         );
-        await migrator.addColumn(
+        await _addColumnIfMissing(
+          migrator,
           enterpriseConfigs,
           enterpriseConfigs.collectionReminderMinutes,
         );

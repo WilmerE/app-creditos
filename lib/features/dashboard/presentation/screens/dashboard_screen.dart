@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/database/app_database.dart';
-import '../../../../core/database/database_seed.dart';
 import '../../../../core/network/supabase_delta_sync.dart';
 import '../../../../core/network/sync_status_button.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -32,26 +30,88 @@ enum _DashboardMenuAction {
   enterprise,
   plans,
   account,
-  seed,
   signOut,
+  resetLocalDatabase,
 }
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) => BlocProvider(
-    create: (_) => DashboardCubit(
-      DriftDashboardRepository(getIt<AppDatabase>()),
-      capitalGroupRepository: getIt<CapitalGroupRepository>(),
-      database: getIt<AppDatabase>(),
-    )..start(),
-    child: const DashboardView(),
-  );
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  bool _resettingDatabase = false;
+
+  Future<void> _confirmAndResetDatabase() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Borrar base de datos local'),
+        content: const Text(
+          'Se eliminarán todos los datos guardados en este dispositivo. Esta acción no se puede deshacer. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Borrar datos'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _resettingDatabase = true);
+    try {
+      // Let BlocProvider and dashboard stream consumers unsubscribe first.
+      await WidgetsBinding.instance.endOfFrame;
+      await resetLocalDatabaseForDebug();
+      if (!mounted) return;
+      setState(() => _resettingDatabase = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Base de datos local borrada correctamente.')),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _resettingDatabase = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo borrar la base de datos: $error')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_resettingDatabase) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return BlocProvider(
+      key: const ValueKey('dashboard-database-session'),
+      create: (_) => DashboardCubit(
+        DriftDashboardRepository(getIt<AppDatabase>()),
+        capitalGroupRepository: getIt<CapitalGroupRepository>(),
+        database: getIt<AppDatabase>(),
+      )..start(),
+      child: DashboardView(
+        onResetLocalDatabase: canUseEmergencyLocalDataWipe
+            ? _confirmAndResetDatabase
+            : null,
+      ),
+    );
+  }
 }
 
 class DashboardView extends StatefulWidget {
-  const DashboardView({super.key});
+  const DashboardView({super.key, this.onResetLocalDatabase});
+
+  final Future<void> Function()? onResetLocalDatabase;
 
   @override
   State<DashboardView> createState() => _DashboardViewState();
@@ -170,10 +230,10 @@ class _DashboardViewState extends State<DashboardView> {
                       ),
                     ),
                   );
-                case _DashboardMenuAction.seed:
-                  await _seed(context);
                 case _DashboardMenuAction.signOut:
                   await confirmAndSignOut(context, getIt<SupabaseDeltaSync>());
+                case _DashboardMenuAction.resetLocalDatabase:
+                  await widget.onResetLocalDatabase?.call();
               }
             },
             itemBuilder: (_) => [
@@ -217,12 +277,12 @@ class _DashboardViewState extends State<DashboardView> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              if (kDebugMode)
+              if (widget.onResetLocalDatabase != null)
                 const PopupMenuItem(
-                  value: _DashboardMenuAction.seed,
+                  value: _DashboardMenuAction.resetLocalDatabase,
                   child: ListTile(
-                    leading: Icon(Icons.science_outlined),
-                    title: Text('Cargar datos de prueba'),
+                    leading: Icon(Icons.delete_forever_outlined),
+                    title: Text('Depuración: borrar datos locales'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -395,50 +455,6 @@ class _DashboardViewState extends State<DashboardView> {
             },
           );
         },
-      ),
-    );
-  }
-}
-
-Future<void> _seed(BuildContext context) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Cargar datos de prueba'),
-      content: const Text(
-        'Se crearán 80 clientes ficticios y 200 tarjetas en esta base local. '
-        'Solo se permite en una base sin clientes, tarjetas ni pagos. '
-        'No utilice estos datos para cobros ni contacte los teléfonos de ejemplo.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Cargar datos'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed != true || !context.mounted) return;
-  try {
-    final result = await DatabaseSeed(getIt<AppDatabase>()).run();
-    if (!context.mounted) return;
-    final message = switch (result) {
-      DatabaseSeedResult.inserted =>
-        'Se cargaron 80 clientes y 200 tarjetas de prueba.',
-      DatabaseSeedResult.alreadyInserted =>
-        'Los datos de prueba ya fueron cargados.',
-    };
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  } on Object catch (error) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('No se pudieron cargar los datos de prueba: $error'),
       ),
     );
   }

@@ -158,13 +158,19 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     PaymentInstallment changedPayment,
   ) async {
     final before = List<PaymentInstallment>.of(_payments);
+    final acceptedPayment =
+        before[index].createdAt == null &&
+            before[index].amountPaid == 0 &&
+            changedPayment.amountPaid > 0
+        ? changedPayment.copyWith(createdAt: DateTime.now())
+        : changedPayment;
     setState(() {
       if (widget.lateFee != null && widget.capitalPending != null) {
-        _payments[index] = changedPayment.copyWith(
+        _payments[index] = acceptedPayment.copyWith(
           balanceAfter: before[index].balanceAfter,
         );
       } else {
-        _payments[index] = changedPayment;
+        _payments[index] = acceptedPayment;
         _recalculateBalances();
       }
     });
@@ -652,18 +658,35 @@ class _CardHeader extends StatelessWidget {
     final info = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(
-          alignment: metrics.compact
-              ? Alignment.center
-              : Alignment.centerLeft,
-          child: Image.asset(
-            'logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg',
-            width: metrics.compact ? 210 : 270,
-            height: metrics.compact ? 102 : 132,
-            fit: BoxFit.contain,
-            alignment: Alignment.centerLeft,
-            semanticLabel: enterprise.name,
-          ),
+        Row(
+          children: [
+            Expanded(
+              flex: enterprise.name.trim().isEmpty ? 1 : 3,
+              child: Image.asset(
+                'logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg',
+                height: metrics.compact ? 102 : 132,
+                fit: BoxFit.contain,
+                alignment: Alignment.centerLeft,
+                semanticLabel: enterprise.name,
+              ),
+            ),
+            if (enterprise.name.trim().isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  enterprise.name,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: metrics.cellFont,
+                    fontWeight: FontWeight.bold,
+                    color: _wineColor,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         if (enterprise.showPhone && enterprise.phone.trim().isNotEmpty)
           _HeaderField(
@@ -976,7 +999,7 @@ class _EditablePaymentCellState extends State<_EditablePaymentCell> {
       final amountCents = (amount * 100).round();
       final oldCents = (widget.payment.amountPaid * 100).round();
       final delta = amountCents - oldCents;
-      final maximum = oldCents + ((capital + fee.amount) * 100).round();
+      final maximum = ((capital + fee.amount) * 100).round();
       if (amountCents > maximum) {
         setState(
           () => _errorText = 'Máximo Q${(maximum / 100).toStringAsFixed(2)}',

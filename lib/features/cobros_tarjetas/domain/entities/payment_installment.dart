@@ -66,6 +66,7 @@ class PaymentInstallment extends Equatable {
     String? receiptNumber,
     bool clearReceiptNumber = false,
     bool? isRenewal,
+    DateTime? createdAt,
   }) {
     return PaymentInstallment(
       id: id,
@@ -78,7 +79,7 @@ class PaymentInstallment extends Equatable {
           ? null
           : receiptNumber ?? this.receiptNumber,
       isRenewal: isRenewal ?? this.isRenewal,
-      createdAt: createdAt,
+      createdAt: createdAt ?? this.createdAt,
       createdAtEstimated: createdAtEstimated,
       isManual: isManual,
       moraCents: moraCents,

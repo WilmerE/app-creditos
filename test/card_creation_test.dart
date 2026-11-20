@@ -268,6 +268,7 @@ void main() {
     await tester.runAsync(() async {
       await cubit.start(preselected: _client());
     });
+    cubit.selectCapitalGroup(null);
     await tester.pumpWidget(
       MaterialApp(
         home: BlocProvider.value(
@@ -338,7 +339,8 @@ void main() {
       ..setMode(ClientMode.newClient)
       ..selectAmount(500)
       ..selectStartDate(DateTime(2024, 2, 27))
-      ..selectFirstPaymentDate(DateTime(2024, 2, 29));
+      ..selectFirstPaymentDate(DateTime(2024, 2, 29))
+      ..selectCapitalGroup(null);
     expect(cubit.state.canSubmit, isFalse);
     cubit.updateDraft(const NewClientDraft(name: 'Luis', address: 'Zona 3'));
     expect(cubit.state.canSubmit, isTrue);
@@ -360,7 +362,9 @@ void main() {
     expect(installments.first.scheduledDate, DateTime(2024, 3, 2));
     expect(installments[1].scheduledDate, DateTime(2024, 3, 9));
     expect(
-      installments.every((row) => row.scheduledDate.weekday == DateTime.saturday),
+      installments.every(
+        (row) => row.scheduledDate?.weekday == DateTime.saturday,
+      ),
       isTrue,
     );
 

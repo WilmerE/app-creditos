@@ -1,5 +1,4 @@
 import 'package:creditos/core/database/app_database.dart';
-import 'package:creditos/core/database/database_seed.dart';
 import 'package:creditos/features/clientes/data/datasources/client_local_datasource.dart';
 import 'package:creditos/features/clientes/data/repositories/client_repository_impl.dart';
 import 'package:creditos/features/clientes/data/services/client_photo_storage.dart';
@@ -13,7 +12,9 @@ import 'package:creditos/features/dashboard/data/drift_dashboard_repository.dart
 import 'package:creditos/features/dashboard/domain/dashboard_repository.dart';
 import 'package:creditos/features/dashboard/presentation/bloc/dashboard_cubit.dart';
 import 'package:creditos/features/dashboard/presentation/screens/dashboard_screen.dart';
+import 'package:creditos/core/network/supabase_delta_sync.dart';
 import 'package:creditos/injection_container.dart';
+import 'support/dashboard_fixture.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -23,15 +24,37 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late AppDatabase db;
   late DriftDashboardRepository repository;
+  late SupabaseDeltaSync testSync;
   final clock = DateTime.now();
   final today = DateTime(clock.year, clock.month, clock.day, 12);
 
   setUp(() async {
     db = AppDatabase.forTesting(NativeDatabase.memory());
-    await DatabaseSeed(db).run(now: today);
+    await DashboardFixture(db).populate(now: today);
     repository = DriftDashboardRepository(db);
+    testSync = _TestSupabaseDeltaSync(db);
+    getIt.registerSingleton<AppDatabase>(db);
+    getIt.registerSingleton<SupabaseDeltaSync>(testSync);
+    getIt.registerFactory<CardDetailCubit>(
+      () => CardDetailCubit(
+        CreditCardRepositoryImpl(
+          CreditCardLocalDataSource(db),
+          PaymentLocalDataSource(db),
+        ),
+        ClientRepositoryImpl(
+          ClientLocalDataSource(db),
+          ClientPhotoStorage(),
+        ),
+      ),
+    );
   });
-  tearDown(() => db.close());
+  tearDown(() async {
+    testSync.dispose();
+    await getIt.unregister<CardDetailCubit>();
+    await getIt.unregister<SupabaseDeltaSync>();
+    await getIt.unregister<AppDatabase>();
+    await db.close();
+  });
 
   test('daily metrics and filter use scheduled dates and last edits, not payment dates', () {
     DashboardCard card(
@@ -84,7 +107,7 @@ void main() {
       cards: cards,
       filter: DashboardFilter.cash,
     );
-    expect(state.projectedToday, 250);
+    expect(state.projectedToday, 50);
     expect(state.estimatedPaidToday, 150);
     expect(state.visibleCards.map((card) => card.id), ['a', 'b']);
     expect(cards.first.pendingBalance, 400);
@@ -94,7 +117,7 @@ void main() {
       cards: cards,
       filter: DashboardFilter.cash,
     );
-    expect(nextDay.projectedToday, 125);
+    expect(nextDay.projectedToday, 100);
     expect(nextDay.estimatedPaidToday, 0);
     expect(nextDay.visibleCards.map((card) => card.id), ['a']);
   });
@@ -181,12 +204,13 @@ void main() {
   );
 
   test(
-    'seeded dashboard has correct filters, balance and daily amounts',
+    'dashboard fixture has correct filters, balance and daily amounts',
     () async {
       final cards = await repository.watchCards().first;
       final state = DashboardState(
         status: DashboardStatus.ready,
         cards: cards,
+        filter: DashboardFilter.active,
         today: today,
       );
       expect(cards, hasLength(200));
@@ -196,17 +220,25 @@ void main() {
       expect(state.count(CardStatus.paid), 141);
       final expectedProjection = cards.fold<double>(
         0,
-        (sum, card) =>
-            sum +
-            card.payments
-                    .where(
-                      (p) =>
-                          p.scheduledDate?.year == today.year &&
-                          p.scheduledDate?.month == today.month &&
-                          p.scheduledDate?.day == today.day,
-                    )
-                    .length *
-                card.weeklyAmount,
+        (sum, card) => card.status == CardStatus.deactivated
+            ? sum
+            : sum +
+                  card.payments
+                      .where(
+                        (p) =>
+                            !p.isManual &&
+                            p.scheduledDate?.year == today.year &&
+                            p.scheduledDate?.month == today.month &&
+                            p.scheduledDate?.day == today.day,
+                      )
+                      .fold<double>(
+                        0,
+                        (subtotal, p) =>
+                            subtotal +
+                            (card.weeklyAmount - (p.amountPaid - p.moraPaid))
+                                .clamp(0, card.weeklyAmount),
+                      ) +
+                  (card.overdueDays > 0 ? card.outstandingMora : 0),
       );
       final expectedEstimate = cards.fold<double>(
         0,
@@ -259,6 +291,7 @@ void main() {
     final cubit = DashboardCubit(repository, clock: () => today)..start();
     addTearDown(cubit.close);
     await cubit.stream.firstWhere((s) => s.status == DashboardStatus.ready);
+    cubit.selectFilter(DashboardFilter.active);
     final card = cubit.state.visibleCards.first;
     final payment = (await PaymentLocalDataSource(
       db,
@@ -363,12 +396,21 @@ void main() {
         cubit.start();
         await cubit.stream.firstWhere((s) => s.status == DashboardStatus.ready);
       });
+      cubit.selectFilter(DashboardFilter.active);
       await tester.pumpWidget(
         MaterialApp(
           home: BlocProvider.value(value: cubit, child: const DashboardView()),
         ),
       );
-      final card = cubit.state.visibleCards.first;
+      final card = cubit.state.visibleCards.firstWhere(
+        (candidate) => cubit.state.cards.every(
+          (other) =>
+              other.id == candidate.id ||
+              other.clientId != candidate.clientId ||
+              !other.status.isOpen ||
+              other.pendingBalance <= 0.005,
+        ),
+      );
       await tester.ensureVisible(find.text(card.clientName).first);
       final tile = find
           .ancestor(
@@ -393,12 +435,17 @@ void main() {
         findsOneWidget,
       );
       expect(cubit.state.visibleCards.any((c) => c.id == card.id), isTrue);
+      final debtorTransition = cubit.stream.firstWhere(
+        (state) => state.cards.any(
+          (candidate) =>
+              candidate.id == card.id && candidate.status == CardStatus.debtor,
+        ),
+      );
       await tester.tap(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Deudor').last);
-      await tester.pump();
       await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        () => debtorTransition.timeout(const Duration(seconds: 2)),
       );
       await tester.pumpAndSettle();
       expect(
@@ -419,29 +466,13 @@ void main() {
         addTearDown(tester.view.reset);
         final cubit = DashboardCubit(repository, clock: () => today);
         addTearDown(cubit.close);
-        getIt.registerSingleton<AppDatabase>(db);
-        getIt.registerFactory<CardDetailCubit>(
-          () => CardDetailCubit(
-            CreditCardRepositoryImpl(
-              CreditCardLocalDataSource(db),
-              PaymentLocalDataSource(db),
-            ),
-            ClientRepositoryImpl(
-              ClientLocalDataSource(db),
-              ClientPhotoStorage(),
-            ),
-          ),
-        );
-        addTearDown(() async {
-          await getIt.unregister<CardDetailCubit>();
-          await getIt.unregister<AppDatabase>();
-        });
         await tester.runAsync(() async {
           cubit.start();
           await cubit.stream.firstWhere(
             (s) => s.status == DashboardStatus.ready,
           );
         });
+        cubit.selectFilter(DashboardFilter.active);
         await tester.pumpWidget(
           MaterialApp(
             home: BlocProvider.value(
@@ -451,6 +482,10 @@ void main() {
           ),
         );
         expect(find.text('Activas / Al día'), findsOneWidget);
+        if (width < 600) {
+          await tester.drag(find.byType(ListView).first, const Offset(0, -350));
+          await tester.pumpAndSettle();
+        }
         expect(find.textContaining('Caja estimada:'), findsOneWidget);
         await tester.ensureVisible(find.text('En mora / Deudoras'));
         await tester.tap(find.text('En mora / Deudoras'));
@@ -495,4 +530,11 @@ void main() {
       },
     );
   }
+}
+
+class _TestSupabaseDeltaSync extends SupabaseDeltaSync {
+  _TestSupabaseDeltaSync(AppDatabase database) : super(database, null);
+
+  @override
+  Future<bool> isRootAccountAvailable() async => false;
 }

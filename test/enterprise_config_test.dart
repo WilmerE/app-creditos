@@ -98,8 +98,20 @@ void main() {
       'enterprise_migration_test_',
     );
     final file = File('${directory.path}/test.sqlite');
-    addTearDown(() => directory.delete(recursive: true));
+    AppDatabase? activeDatabase;
+    Future<void> closeActiveDatabase() async {
+      final database = activeDatabase;
+      if (database == null) return;
+      activeDatabase = null;
+      await database.close();
+    }
+
+    addTearDown(() async {
+      await closeActiveDatabase();
+      await _deleteDirectoryWithRetries(directory);
+    });
     var db = AppDatabase.forTesting(NativeDatabase(file));
+    activeDatabase = db;
     await db.customStatement(
       "INSERT INTO sync_metadata (key) VALUES ('preserved')",
     );
@@ -108,10 +120,17 @@ void main() {
     await db.customStatement('DROP TABLE mora_tracking');
     await db.customStatement('DROP TABLE mora_applications');
     await db.customStatement('DROP TABLE payment_changes');
+    await db.customStatement('DROP TABLE operational_notifications');
+    await db.customStatement('DROP TABLE capital_groups');
+    await db.customStatement('ALTER TABLE clients DROP COLUMN latitude');
+    await db.customStatement('ALTER TABLE clients DROP COLUMN longitude');
+    await db.customStatement('ALTER TABLE cards DROP COLUMN folder_id');
+    await db.customStatement('ALTER TABLE cards DROP COLUMN updated_at');
     await db.customStatement('ALTER TABLE payments DROP COLUMN mora_cents');
     await db.customStatement('PRAGMA user_version = 5');
-    await db.close();
+    await closeActiveDatabase();
     db = AppDatabase.forTesting(NativeDatabase(file));
+    activeDatabase = db;
     expect(
       (await db.select(db.syncMetadata).get()).any(
         (row) => row.key == 'preserved',
@@ -120,7 +139,28 @@ void main() {
     );
     final repository = EnterpriseConfigRepository(db);
     await repository.save(const EnterpriseConfig(name: 'Migrada'));
+    // `first` cancels its one-shot stream subscription after receiving a row.
     expect((await repository.watch().first).name, 'Migrada');
-    await db.close();
   });
+}
+
+Future<void> _deleteDirectoryWithRetries(Directory directory) async {
+  const retryDelays = [
+    Duration(milliseconds: 50),
+    Duration(milliseconds: 100),
+    Duration(milliseconds: 200),
+    Duration(milliseconds: 400),
+  ];
+
+  for (var attempt = 0; ; attempt++) {
+    try {
+      if (await directory.exists()) await directory.delete(recursive: true);
+      return;
+    } on FileSystemException catch (error, stackTrace) {
+      if (!Platform.isWindows || attempt >= retryDelays.length) {
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      await Future<void>.delayed(retryDelays[attempt]);
+    }
+  }
 }
