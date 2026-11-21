@@ -40,7 +40,13 @@ void main() {
       ),
     );
 
-    expect(find.text('V&\$ INVERSIONES'), findsOneWidget);
+    expect(find.text('V&\$ INVERSIONES'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Image && widget.alignment == Alignment.center,
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('YOLI DE DON NERY'), findsOneWidget);
     expect(
       find.text(
@@ -164,43 +170,44 @@ void main() {
     expect(find.text('07/11/2026'), findsOneWidget);
   });
 
-  testWidgets('accepts one mora day with a remainder and rejects amounts above the debt', (
-    tester,
-  ) async {
-    var saves = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: TarjetaDigitalWidget(
-              customer: customer,
-              initialBalance: 100,
-              payments: [payment],
-              onAutoSave: (_) async {
-                saves++;
-              },
-              capitalPending: 100,
-              lateFee: LateFee(days: 2, dueDate: DateTime(2026, 11, 6)),
-              debounceDuration: const Duration(milliseconds: 100),
+  testWidgets(
+    'accepts one mora day with a remainder and rejects amounts above the debt',
+    (tester) async {
+      var saves = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TarjetaDigitalWidget(
+                customer: customer,
+                initialBalance: 100,
+                payments: [payment],
+                onAutoSave: (_) async {
+                  saves++;
+                },
+                capitalPending: 100,
+                lateFee: LateFee(days: 2, dueDate: DateTime(2026, 11, 6)),
+                debounceDuration: const Duration(milliseconds: 100),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    final amount = find.byKey(const ValueKey('payment-1-amount'));
-    await tester.enterText(amount, '10');
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(find.textContaining('Abono minimo'), findsOneWidget);
-    expect(saves, 0);
-    await tester.enterText(amount, '30');
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(saves, 1);
-    await tester.enterText(amount, '141');
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(find.text('Máximo Q140.00'), findsOneWidget);
-    expect(saves, 1);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+      );
+      final amount = find.byKey(const ValueKey('payment-1-amount'));
+      await tester.enterText(amount, '10');
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.textContaining('Abono minimo'), findsOneWidget);
+      expect(saves, 0);
+      await tester.enterText(amount, '30');
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(saves, 1);
+      await tester.enterText(amount, '141');
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(find.text('Máximo Q140.00'), findsOneWidget);
+      expect(saves, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets('locks payment fields after 24 hours', (tester) async {
     final expired = PaymentInstallment(
@@ -422,7 +429,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Empresa Ejemplo'), findsOneWidget);
+    expect(find.text('Empresa Ejemplo'), findsNothing);
     expect(
       find.textContaining('Teléfono empresa: 12345678', findRichText: true),
       findsOneWidget,

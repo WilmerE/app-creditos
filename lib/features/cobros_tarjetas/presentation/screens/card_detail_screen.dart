@@ -76,14 +76,19 @@ class _CardDetailViewState extends State<CardDetailView> {
     try {
       final file = await _capture();
       if (file == null || !mounted) return;
-      
+
       // Compartir directamente el archivo generado
-      await _snapshotService.share(file, text: 'Estado de cuenta de $customerName');
-      
+      await _snapshotService.share(
+        file,
+        text: 'Estado de cuenta de $customerName',
+      );
+
       if (phone == null || phone.trim().isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No hay teléfono registrado para este cliente.')),
+          const SnackBar(
+            content: Text('No hay teléfono registrado para este cliente.'),
+          ),
         );
       }
     } catch (error) {
@@ -99,10 +104,19 @@ class _CardDetailViewState extends State<CardDetailView> {
     try {
       final file = await _capture();
       if (file == null || !mounted) return;
-      final saved = await _snapshotService.save(file);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Imagen guardada en ${saved.path}')));
+      final savedLocation = await _snapshotService.save(file);
+      if (!mounted) return;
+      final message = Platform.isAndroid
+          ? 'Imagen guardada en la galerÃ­a del dispositivo.'
+          : 'Imagen guardada en $savedLocation';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo guardar la imagen: $error')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar la imagen: $error')),
+        );
+      }
     }
   }
 
@@ -121,11 +135,26 @@ class _CardDetailViewState extends State<CardDetailView> {
                 PopupMenuButton<String>(
                   tooltip: 'Exportar tarjeta',
                   onSelected: (value) => value == 'share'
-                      ? _share(client?.primaryPhone, client?.fullName ?? 'cliente')
+                      ? _share(
+                          client?.primaryPhone,
+                          client?.fullName ?? 'cliente',
+                        )
                       : _save(),
                   itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'share', child: ListTile(leading: Icon(Icons.share), title: Text('Compartir por WhatsApp'))),
-                    PopupMenuItem(value: 'save', child: ListTile(leading: Icon(Icons.download), title: Text('Guardar imagen'))),
+                    PopupMenuItem(
+                      value: 'share',
+                      child: ListTile(
+                        leading: Icon(Icons.share),
+                        title: Text('Compartir por WhatsApp'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'save',
+                      child: ListTile(
+                        leading: Icon(Icons.download),
+                        title: Text('Guardar imagen'),
+                      ),
+                    ),
                   ],
                 ),
               if (card != null)
@@ -151,35 +180,42 @@ class _CardDetailViewState extends State<CardDetailView> {
             ),
             CardDetailStatus.ready => SingleChildScrollView(
               padding: const EdgeInsets.all(12),
-              child: RepaintBoundary(
-                key: _snapshotKey,
-                child: TarjetaDigitalWidget(
-                customer: TarjetaCustomerInfo(
-                  name: client!.fullName,
-                  address: client.address,
-                  phone: client.phones.join(' / '),
-                  dpi: client.dpi ?? '',
-                  reference: client.alias ?? '',
-                  startDate: card!.startDate,
-                  requestedAmount: card.requestedAmount,
-                  paymentPlan: _planLabel(card),
-                  photo: _photoOf(client.photoPath),
-                ),
-                initialBalance: card.totalToPay,
-                weeklyAmount: card.weeklyAmount,
-                enterpriseConfig: enterpriseConfig,
-                payments: state.installments,
-                capitalPending: state.pendingBalance,
-                dueToday: state.totalDueToday,
-                lateFee: state.lateFee,
-                renewalColor: colorFromHex(card.colorHex)
-                    .withValues(alpha: 0.18),
-                onAutoSave: context.read<CardDetailCubit>().autoSave,
-                onAddRow: context.read<CardDetailCubit>().addEmptyInstallment,
-                onDeleteRow: context
-                    .read<CardDetailCubit>()
-                    .deleteEmptyLastInstallment,
-                readOnly: _exportMode,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: RepaintBoundary(
+                    key: _snapshotKey,
+                    child: TarjetaDigitalWidget(
+                      customer: TarjetaCustomerInfo(
+                        name: client!.fullName,
+                        address: client.address,
+                        phone: client.phones.join(' / '),
+                        dpi: client.dpi ?? '',
+                        reference: client.alias ?? '',
+                        startDate: card!.startDate,
+                        requestedAmount: card.requestedAmount,
+                        paymentPlan: _planLabel(card),
+                        photo: _photoOf(client.photoPath),
+                      ),
+                      initialBalance: card.totalToPay,
+                      weeklyAmount: card.weeklyAmount,
+                      enterpriseConfig: enterpriseConfig,
+                      payments: state.installments,
+                      capitalPending: state.pendingBalance,
+                      dueToday: state.totalDueToday,
+                      lateFee: state.lateFee,
+                      renewalColor: colorFromHex(card.colorHex)
+                          .withValues(alpha: 0.18),
+                      onAutoSave: context.read<CardDetailCubit>().autoSave,
+                      onAddRow: context
+                          .read<CardDetailCubit>()
+                          .addEmptyInstallment,
+                      onDeleteRow: context
+                          .read<CardDetailCubit>()
+                          .deleteEmptyLastInstallment,
+                      readOnly: _exportMode,
+                    ),
+                  ),
                 ),
               ),
             ),

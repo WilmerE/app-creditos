@@ -74,6 +74,7 @@ class SupabaseDeltaSync extends ChangeNotifier
       _watchLocalChanges(_database.select(_database.capitalGroups).watch());
       _watchLocalChanges(_database.select(_database.cardsTable).watch());
       _watchLocalChanges(_database.select(_database.payments).watch());
+      _watchLocalChanges(_database.select(_database.enterpriseConfigs).watch());
     }
     _retryTimer ??= Timer.periodic(
       const Duration(minutes: 2),
@@ -254,6 +255,7 @@ class SupabaseDeltaSync extends ChangeNotifier
       await _syncCapitalGroups(client, user.id);
       await _syncCards(client, user.id);
       await _syncPayments(client, user.id);
+      await _syncEnterpriseConfig(client, user.id);
       _syncedRevision = syncingRevision;
       _setPhase(SyncPhase.synchronized);
     } on Object {
@@ -599,6 +601,94 @@ class SupabaseDeltaSync extends ChangeNotifier
     }
     if (toPush.isNotEmpty) {
       await _upsertInBatches(client, 'payments', toPush, 'id');
+    }
+  }
+
+  Future<void> _syncEnterpriseConfig(
+    SupabaseClient client,
+    String userId,
+  ) async {
+    final local = await (_database.select(
+      _database.enterpriseConfigs,
+    )..where((row) => row.id.equals(1))).getSingleOrNull();
+    final localSyncMetadata = await (_database.select(
+      _database.syncMetadata,
+    )..where(
+      (row) => row.key.equals('enterprise_config_updated_at'),
+    )).getSingleOrNull();
+    final cloudRows = await _selectAll(client, 'enterprise_configs');
+    final cloud = cloudRows.isEmpty ? null : cloudRows.first;
+    if (local == null && cloud == null) return;
+
+    final localChangedAt = localSyncMetadata?.lastSyncedAt;
+    if (local != null &&
+        (cloud == null ||
+            (localChangedAt != null &&
+                localChangedAt.isAfter(_readDate(cloud['updated_at']))))) {
+      final updatedAt = localChangedAt ?? DateTime.now();
+      await _upsertInBatches(client, 'enterprise_configs', [
+        {
+          'user_id': userId,
+          'name': local.name,
+          'phone': local.phone,
+          'nit': local.nit,
+          'email': local.email,
+          'bank_account': local.bankAccount,
+          'show_phone': local.showPhone,
+          'show_nit': local.showNit,
+          'show_email': local.showEmail,
+          'show_bank_account': local.showBankAccount,
+          'mora': local.mora,
+          'collection_deadline_hour': local.collectionDeadlineHour,
+          'collection_deadline_minute': local.collectionDeadlineMinute,
+          'collection_reminder_minutes': local.collectionReminderMinutes,
+          'updated_at': updatedAt.toUtc().toIso8601String(),
+        },
+      ], 'user_id');
+      return;
+    }
+
+    if (cloud != null &&
+        (local == null ||
+            localChangedAt == null ||
+            _readDate(cloud['updated_at']).isAfter(localChangedAt))) {
+      final companion = EnterpriseConfigsCompanion(
+        id: const Value(1),
+        name: Value(cloud['name'] as String),
+        phone: Value(cloud['phone'] as String),
+        nit: Value(cloud['nit'] as String),
+        email: Value(cloud['email'] as String),
+        bankAccount: Value(cloud['bank_account'] as String),
+        showPhone: Value(cloud['show_phone'] as bool),
+        showNit: Value(cloud['show_nit'] as bool),
+        showEmail: Value(cloud['show_email'] as bool),
+        showBankAccount: Value(cloud['show_bank_account'] as bool),
+        mora: Value((cloud['mora'] as num).toInt()),
+        collectionDeadlineHour: Value(
+          (cloud['collection_deadline_hour'] as num).toInt(),
+        ),
+        collectionDeadlineMinute: Value(
+          (cloud['collection_deadline_minute'] as num).toInt(),
+        ),
+        collectionReminderMinutes: Value(
+          (cloud['collection_reminder_minutes'] as num).toInt(),
+        ),
+      );
+      if (local == null) {
+        await _database.into(_database.enterpriseConfigs).insert(companion);
+      } else {
+        await (_database.update(
+          _database.enterpriseConfigs,
+        )..where((row) => row.id.equals(1))).write(companion);
+      }
+      await _database
+          .into(_database.syncMetadata)
+          .insertOnConflictUpdate(
+            SyncMetadataCompanion.insert(
+              key: 'enterprise_config_updated_at',
+              lastSyncedAt: Value(_readDate(cloud['updated_at'])),
+            ),
+          );
     }
   }
 

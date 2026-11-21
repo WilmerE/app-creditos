@@ -10,6 +10,8 @@ class CreditosApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Llave en Mano',
     theme: AppTheme.light,
+    builder: (context, child) =>
+        SafeArea(bottom: true, child: child ?? const SizedBox.shrink()),
     home: const AuthGate(),
   );
 }

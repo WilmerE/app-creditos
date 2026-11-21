@@ -47,25 +47,40 @@ class EnterpriseConfigRepository {
         config.collectionReminderMinutes > 720) {
       throw ArgumentError('Revise el límite diario y el tiempo de aviso.');
     }
-    return _database
-        .into(_database.enterpriseConfigs)
-        .insertOnConflictUpdate(
-          EnterpriseConfigsCompanion.insert(
-            id: const Value(1),
-            name: config.name,
-            phone: config.phone,
-            nit: config.nit,
-            email: config.email,
-            bankAccount: config.bankAccount,
-            showPhone: config.showPhone,
-            showNit: config.showNit,
-            showEmail: config.showEmail,
-            showBankAccount: config.showBankAccount,
-            mora: Value(config.mora),
-            collectionDeadlineHour: Value(config.collectionDeadlineHour),
-            collectionDeadlineMinute: Value(config.collectionDeadlineMinute),
-            collectionReminderMinutes: Value(config.collectionReminderMinutes),
-          ),
-        );
+    final now = DateTime.now();
+    return _database.transaction(() async {
+      await _database
+          .into(_database.enterpriseConfigs)
+          .insertOnConflictUpdate(
+            EnterpriseConfigsCompanion.insert(
+              id: const Value(1),
+              name: config.name,
+              phone: config.phone,
+              nit: config.nit,
+              email: config.email,
+              bankAccount: config.bankAccount,
+              showPhone: config.showPhone,
+              showNit: config.showNit,
+              showEmail: config.showEmail,
+              showBankAccount: config.showBankAccount,
+              mora: Value(config.mora),
+              collectionDeadlineHour: Value(config.collectionDeadlineHour),
+              collectionDeadlineMinute: Value(
+                config.collectionDeadlineMinute,
+              ),
+              collectionReminderMinutes: Value(
+                config.collectionReminderMinutes,
+              ),
+            ),
+          );
+      await _database
+          .into(_database.syncMetadata)
+          .insertOnConflictUpdate(
+            SyncMetadataCompanion.insert(
+              key: 'enterprise_config_updated_at',
+              lastSyncedAt: Value(now),
+            ),
+          );
+    });
   }
 }

@@ -189,22 +189,12 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     if (changedPayment.type != PaymentType.cash &&
         (changedPayment.receiptNumber == null ||
             changedPayment.receiptNumber!.trim().isEmpty)) {
-      setState(() {
-        _payments = before;
-        _unconfirmedPayments.remove(changedPayment.id);
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Ingrese el número de boleta para depósito o transferencia.',
-          ),
-        ),
-      );
-      throw StateError(
-        'Ingrese el número de boleta para depósito o transferencia.',
-      );
+      // Keep the method selected locally so its receipt field can be shown.
+      // The repository requires a receipt, so save after the user enters it.
+      _unconfirmedPayments.remove(changedPayment.id);
+      if (mounted) setState(() {});
+      return;
     }
-
     try {
       await widget.onAutoSave(changedPayments);
       if (mounted && _unconfirmedPayments[changedPayment.id] == revision) {
@@ -381,30 +371,81 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
         ),
         children: [
           Padding(
-            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
-            child: Column(children: [
-              Text(payment.isManual ? 'Manual' : 'Plan original', style: TextStyle(fontSize: metrics.smallFont, color: Colors.grey[700])),
-              Text(payment.scheduledDate == null ? '—' : DateFormat('dd/MM/yyyy').format(payment.scheduledDate!), textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.cellFont)),
-            ]),
+            padding: EdgeInsets.symmetric(
+              vertical: metrics.cellPadding,
+              horizontal: 4,
+            ),
+            child: Column(
+              children: [
+                Text(
+                  payment.isManual ? 'Manual' : 'Plan original',
+                  style: TextStyle(
+                    fontSize: metrics.smallFont,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                Text(
+                  payment.scheduledDate == null
+                      ? '—'
+                      : DateFormat('dd/MM/yyyy').format(payment.scheduledDate!),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: metrics.cellFont),
+                ),
+              ],
+            ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
-            child: Column(children: [
-              Text(CurrencyFormatter.formatGtq(payment.amountPaid), textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.cellFont)),
-              if (payment.type != PaymentType.cash) Text('${payment.type.label}${payment.receiptNumber == null ? '' : ' · ${payment.receiptNumber}'}', textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.smallFont)),
-              if (payment.amountPaid > 0 && payment.createdAt != null) Text('${payment.createdAtEstimated ? 'Estimada: ' : 'Recibido: '}${DateFormat('dd/MM/yyyy').format(payment.createdAt!.toLocal())}', textAlign: TextAlign.center, style: TextStyle(fontSize: metrics.smallFont)),
-            ]),
+            padding: EdgeInsets.symmetric(
+              vertical: metrics.cellPadding,
+              horizontal: 4,
+            ),
+            child: Column(
+              children: [
+                Text(
+                  CurrencyFormatter.formatGtq(payment.amountPaid),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: metrics.cellFont),
+                ),
+                if (payment.type != PaymentType.cash)
+                  Text(
+                    '${payment.type.label}${payment.receiptNumber == null ? '' : ' · ${payment.receiptNumber}'}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: metrics.smallFont),
+                  ),
+                if (payment.amountPaid > 0 && payment.createdAt != null)
+                  Text(
+                    '${payment.createdAtEstimated ? 'Estimada: ' : 'Recibido: '}${DateFormat('dd/MM/yyyy').format(payment.createdAt!.toLocal())}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: metrics.smallFont),
+                  ),
+              ],
+            ),
           ),
           Padding(
-            padding: EdgeInsets.symmetric(vertical: metrics.cellPadding, horizontal: 4),
+            padding: EdgeInsets.symmetric(
+              vertical: metrics.cellPadding,
+              horizontal: 4,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 Flexible(
-                  child: Text(CurrencyFormatter.formatGtq(payment.balanceAfter), textAlign: TextAlign.right, style: TextStyle(fontSize: metrics.cellFont, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    CurrencyFormatter.formatGtq(payment.balanceAfter),
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: metrics.cellFont,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
                 if (settled)
-                  const Icon(Icons.check_circle, color: Colors.green, size: 18, semanticLabel: 'Cuota saldada'),
+                  const Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 18,
+                    semanticLabel: 'Cuota saldada',
+                  ),
               ],
             ),
           ),
@@ -595,7 +636,9 @@ class _BalanceSummary extends StatelessWidget {
         children: [
           if (lateFee.days > 0 && lateFee.dueDate != null)
             InkWell(
-              onTap: readOnly || lateFee.dates.isEmpty ? null : () => _showDetails(context),
+              onTap: readOnly || lateFee.dates.isEmpty
+                  ? null
+                  : () => _showDetails(context),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -658,36 +701,6 @@ class _CardHeader extends StatelessWidget {
     final info = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              flex: enterprise.name.trim().isEmpty ? 1 : 3,
-              child: Image.asset(
-                'logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg',
-                height: metrics.compact ? 102 : 132,
-                fit: BoxFit.contain,
-                alignment: Alignment.centerLeft,
-                semanticLabel: enterprise.name,
-              ),
-            ),
-            if (enterprise.name.trim().isNotEmpty) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  enterprise.name,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: metrics.cellFont,
-                    fontWeight: FontWeight.bold,
-                    color: _wineColor,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
         if (enterprise.showPhone && enterprise.phone.trim().isNotEmpty)
           _HeaderField(
             label: 'Teléfono empresa',
@@ -755,8 +768,21 @@ class _CardHeader extends StatelessWidget {
         border: Border.all(color: _wineColor, width: 1.5),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: metrics.compact
-          ? Column(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Image.asset(
+              'logo/WhatsApp Image 2026-11-05 at 9.12.06 PM.jpeg',
+              height: metrics.compact ? 102 : 132,
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+              semanticLabel: enterprise.name,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (metrics.compact)
+            Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Align(alignment: Alignment.center, child: avatar),
@@ -764,7 +790,8 @@ class _CardHeader extends StatelessWidget {
                 info,
               ],
             )
-          : Row(
+          else
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(child: info),
@@ -772,6 +799,8 @@ class _CardHeader extends StatelessWidget {
                 avatar,
               ],
             ),
+        ],
+      ),
     );
   }
 }
@@ -1066,9 +1095,7 @@ class _EditablePaymentCellState extends State<_EditablePaymentCell> {
                           child: CircularProgressIndicator(strokeWidth: 1.5),
                         ),
                       )
-                    : _isDate &&
-                          widget.payment.isManual &&
-                          !widget.locked
+                    : _isDate && widget.payment.isManual && !widget.locked
                     ? IconButton(
                         tooltip: 'Seleccionar fecha',
                         visualDensity: VisualDensity.compact,
