@@ -14,7 +14,9 @@ import 'package:creditos/features/dashboard/presentation/bloc/dashboard_cubit.da
 import 'package:creditos/features/dashboard/presentation/screens/dashboard_screen.dart';
 import 'package:creditos/core/network/supabase_delta_sync.dart';
 import 'package:creditos/injection_container.dart';
+
 import 'support/dashboard_fixture.dart';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -41,10 +43,7 @@ void main() {
           CreditCardLocalDataSource(db),
           PaymentLocalDataSource(db),
         ),
-        ClientRepositoryImpl(
-          ClientLocalDataSource(db),
-          ClientPhotoStorage(),
-        ),
+        ClientRepositoryImpl(ClientLocalDataSource(db), ClientPhotoStorage()),
       ),
     );
   });
@@ -411,17 +410,17 @@ void main() {
               other.pendingBalance <= 0.005,
         ),
       );
-      await tester.ensureVisible(find.text(card.clientName).first);
+      // Locate the tile by card id: a client can own several cards, so the
+      // name alone may resolve to a different card's tile.
+      final details = find.byKey(ValueKey('dashboard-details-${card.id}'));
       final tile = find
-          .ancestor(
-            of: find.text(card.clientName).first,
-            matching: find.byType(Card),
-          )
+          .ancestor(of: details, matching: find.byType(Card))
           .first;
       final menu = find.descendant(
         of: tile,
         matching: find.byTooltip('Cambiar estado'),
       );
+      await tester.ensureVisible(menu);
       await tester.tap(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Pagada').last);
@@ -435,18 +434,26 @@ void main() {
         findsOneWidget,
       );
       expect(cubit.state.visibleCards.any((c) => c.id == card.id), isTrue);
-      final debtorTransition = cubit.stream.firstWhere(
-        (state) => state.cards.any(
-          (candidate) =>
-              candidate.id == card.id && candidate.status == CardStatus.debtor,
-        ),
-      );
+      // Dismiss the error SnackBar so it cannot cover the menu button.
+      tester
+          .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+          .removeCurrentSnackBar();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(menu);
       await tester.tap(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Deudor').last);
-      await tester.runAsync(
-        () => debtorTransition.timeout(const Duration(seconds: 2)),
+      // The write runs on real async time while the cubit's stream emission
+      // is delivered in the fake-async zone, so alternate both until it lands.
+      bool isDebtor() => cubit.state.cards.any(
+        (c) => c.id == card.id && c.status == CardStatus.debtor,
       );
+      for (var i = 0; i < 40 && !isDebtor(); i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
       await tester.pumpAndSettle();
       expect(
         cubit.state.cards.firstWhere((c) => c.id == card.id).status,

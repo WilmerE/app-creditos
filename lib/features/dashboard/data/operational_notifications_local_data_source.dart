@@ -87,6 +87,12 @@ class OperationalNotificationsLocalDataSource {
 
     final cards = await db.select(db.cardsTable).get();
     final payments = await db.select(db.payments).get();
+    // Folder integer ids differ between devices; key events by sync id so the
+    // tablet and the phone produce the same notification.
+    final folderSyncIds = {
+      for (final group in await db.select(db.capitalGroups).get())
+        group.id: group.syncId,
+    };
     final folderIds = <int?>{null, ...cards.map((card) => card.folderId)};
     for (final folderId in folderIds) {
       final cardIds = cards
@@ -117,7 +123,9 @@ class OperationalNotificationsLocalDataSource {
       if (count == 0) continue;
       final dateKey =
           '${localNow.year}-${localNow.month.toString().padLeft(2, '0')}-${localNow.day.toString().padLeft(2, '0')}';
-      final folderKey = folderId?.toString() ?? 'principal';
+      final folderKey = folderId == null
+          ? 'principal'
+          : folderSyncIds[folderId] ?? folderId.toString();
       await add(
         eventKey: 'collection_cutoff:$dateKey:$folderKey',
         type: 'collection_cutoff',

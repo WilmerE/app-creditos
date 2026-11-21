@@ -75,16 +75,21 @@ flutter run -d windows --dart-define-from-file=supabase.local.json
 Para Android, use el mismo argumento con `-d <id_del_dispositivo>`. En el
 primer inicio, la pantalla de acceso permite iniciar sesión, crear cuenta o
 recuperar la contraseña por código. Después de autenticarse, la app abre el
-Dashboard directamente. Los dispositivos sincronizan los registros de esa cuenta por `updated_at`; en
-conflictos gana la versión con la marca más reciente. El proceso se intenta al
-iniciar sesión, al abrir la app y cada dos minutos. Las fotos continúan en el
-dispositivo; los registros de clientes conservan su ruta local de foto sin
-subirla.
+Dashboard directamente. Todos los dispositivos de la cuenta (por ejemplo, la
+tablet del cobrador y su teléfono de respaldo) sincronizan todas las
+entidades: clientes y sus fotos, carpetas, tarjetas, pagos, días de mora y sus
+aplicaciones, historial de correcciones, notificaciones, planes de crédito y
+configuración. Los registros editables usan la marca `updated_at` más reciente;
+la mora y el historial usan claves deterministas y reglas que no pierden datos
+(ver `lib/core/network/sync_engine.dart`). El proceso se intenta al iniciar
+sesión, al abrir la app, tras cada cambio local y cada dos minutos.
 
-Antes de usar una instancia nueva, aplique
-`supabase/migrations/20261110000000_local_first_sync.sql` en el SQL Editor de
-Supabase. La migración crea las tablas espejo y limita lectura y escritura a
-filas del usuario autenticado mediante RLS. Las cuentas y el esquema del
+Antes de usar una instancia nueva, aplique en orden las migraciones de
+`supabase/migrations/` en el SQL Editor de Supabase. Crean las tablas espejo,
+el bucket privado `client-photos` y limitan lectura y escritura a filas del
+usuario autenticado mediante RLS. Aplique
+`20261121000000_full_device_sync.sql` antes de instalar la versión que la
+requiere. Las cuentas y el esquema del
 proyecto de Supabase deben estar habilitados para Auth por correo y contraseña.
 
 ### Sesión y trabajo offline

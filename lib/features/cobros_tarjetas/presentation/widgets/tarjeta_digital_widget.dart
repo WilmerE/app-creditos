@@ -464,7 +464,6 @@ class _TarjetaDigitalWidgetState extends State<TarjetaDigitalWidget> {
     final canDelete =
         payment.isManual &&
         index == _payments.length - 1 &&
-        payment.scheduledDate == null &&
         payment.amountPaid == 0 &&
         payment.createdAt == null &&
         payment.type == PaymentType.cash &&

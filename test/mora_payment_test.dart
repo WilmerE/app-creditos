@@ -107,14 +107,17 @@ void main() {
     expect((await db.select(db.moraApplications).get()), hasLength(2));
   });
 
-  test('a Q40 payment covers two Q20 mora days and leaves capital unchanged', () async {
-    await save(40);
-    final days = await db.select(db.mora).get();
-    expect(days.map((day) => day.pagado), [true, true]);
-    final row = await db.select(db.payments).getSingle();
-    expect(row.moraCents, 4000);
-    expect(row.balanceAfter, 100);
-  });
+  test(
+    'a Q40 payment covers two Q20 mora days and leaves capital unchanged',
+    () async {
+      await save(40);
+      final days = await db.select(db.mora).get();
+      expect(days.map((day) => day.pagado), [true, true]);
+      final row = await db.select(db.payments).getSingle();
+      expect(row.moraCents, 4000);
+      expect(row.balanceAfter, 100);
+    },
+  );
   test('reversal removes principal first then whole days at their original paid amounts', () async {
     await save(65);
     await save(45);
@@ -192,13 +195,13 @@ void main() {
   test(
     'changing the rate affects unpaid days and reversals retain the paid rate',
     () async {
-      await save(30);
+      await save(20);
       await EnterpriseConfigRepository(db)
           .save(const EnterpriseConfig(mora: 30));
       expect((await cards.watchMora('card').first).amount, 30);
       await expectLater(save(49), throwsStateError);
       await save(50);
-      await save(30);
+      await save(20);
       final days = await db.select(db.mora).get();
       expect(days.map((day) => day.pagado), [true, false]);
       expect((await cards.watchMora('card').first).amount, 30);

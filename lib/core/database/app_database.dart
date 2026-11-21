@@ -144,6 +144,8 @@ class OperationalNotifications extends Table {
 
 class MoraApplications extends Table {
   IntColumn get id => integer().autoIncrement()();
+  // Stable identity shared with the cloud; local integer ids differ per device.
+  TextColumn get syncId => text().withDefault(const Constant(''))();
   TextColumn get paymentId => text().references(Payments, #id)();
   IntColumn get moraId => integer().references(Mora, #id)();
   IntColumn get cents => integer()();
@@ -154,6 +156,8 @@ class MoraApplications extends Table {
 
 class PaymentChanges extends Table {
   IntColumn get id => integer().autoIncrement()();
+  // Stable identity shared with the cloud; local integer ids differ per device.
+  TextColumn get syncId => text().withDefault(const Constant(''))();
   TextColumn get paymentId => text().references(Payments, #id)();
   RealColumn get oldAmount => real()();
   RealColumn get newAmount => real()();
@@ -190,7 +194,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   Future<void> savePayments(List<PaymentsCompanion> payments) {
     return batch((batch) {
@@ -355,6 +359,19 @@ class AppDatabase extends _$AppDatabase {
       if (from < 14) {
         await _addColumnIfMissing(migrator, payments, payments.deletedAt);
       }
+      if (from < 15) {
+        await _addColumnIfMissing(
+          migrator,
+          moraApplications,
+          moraApplications.syncId,
+        );
+        await _addColumnIfMissing(
+          migrator,
+          paymentChanges,
+          paymentChanges.syncId,
+        );
+        await _backfillSyncIds();
+      }
     },
   );
 
@@ -375,6 +392,7 @@ class AppDatabase extends _$AppDatabase {
         initialized INTEGER NOT NULL DEFAULT 1
       )
     ''');
+    await _ensureCreditPlanSyncColumns();
     final initialized = await customSelect(
       'SELECT initialized FROM credit_plan_catalog_meta WHERE id = 1',
     ).getSingleOrNull();
@@ -394,7 +412,51 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'INSERT INTO credit_plan_catalog_meta (id, initialized) VALUES (1, 1)',
     );
+    await _assignCreditPlanSyncIds();
   }
+
+  /// Adds the sync identity, LWW clock and tombstone to the plan catalog.
+  /// Times are unix seconds, matching Drift's DateTime storage.
+  Future<void> _ensureCreditPlanSyncColumns() async {
+    if (!await _hasColumn('credit_plans', 'sync_id')) {
+      await customStatement(
+        "ALTER TABLE credit_plans ADD COLUMN sync_id TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (!await _hasColumn('credit_plans', 'updated_at')) {
+      await customStatement(
+        'ALTER TABLE credit_plans ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!await _hasColumn('credit_plans', 'deleted_at')) {
+      await customStatement(
+        'ALTER TABLE credit_plans ADD COLUMN deleted_at INTEGER',
+      );
+    }
+    await _assignCreditPlanSyncIds();
+  }
+
+  /// Plans without an identity get one derived from their values, so the
+  /// factory catalog seeded on each device maps to the same cloud rows.
+  Future<void> _assignCreditPlanSyncIds() => customStatement(
+    "UPDATE credit_plans SET sync_id = 'plan-' || amount_cents || '-' || "
+    "installments || '-' || installment_cents WHERE sync_id = ''",
+  );
+
+  /// Gives every audit/application row a stable cloud identity.
+  Future<void> _backfillSyncIds() async {
+    for (final table in const ['mora_applications', 'payment_changes']) {
+      await customStatement(
+        "UPDATE $table SET sync_id = $_sqlUuid WHERE sync_id = ''",
+      );
+    }
+  }
+
+  static const _sqlUuid =
+      "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || "
+      "substr(lower(hex(randomblob(2))), 2) || '-' || "
+      "substr('89ab', abs(random()) % 4 + 1, 1) || "
+      "substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))";
 
   Future<void> _createMoraIndex() => customStatement(
     'CREATE UNIQUE INDEX mora_card_day_unique ON mora (card_id, created_at)',

@@ -243,6 +243,117 @@ void main() {
       expect(await db.select(db.moraApplications).get(), isEmpty);
     },
   );
+
+  test(
+    'v14 migration gives existing audit rows and plans a sync identity',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('sync_v14_test_');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}test.sqlite',
+      );
+      var db = AppDatabase.forTesting(NativeDatabase(file));
+      addTearDown(() async {
+        await db.close();
+        await _deleteDirectoryWithRetries(directory);
+      });
+      final now = DateTime.now();
+      await db
+          .into(db.clientsTable)
+          .insert(
+            ClientsTableCompanion.insert(
+              id: 'c',
+              fullName: 'Cliente',
+              address: 'Zona',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+      await db
+          .into(db.cardsTable)
+          .insert(
+            CardsTableCompanion.insert(
+              id: 'card',
+              clientId: 'c',
+              requestedAmount: 100,
+              deliveredAmount: 100,
+              totalInstallments: 2,
+              weeklyAmount: 50,
+              startDate: now,
+              createdAt: now,
+            ),
+          );
+      await db
+          .into(db.payments)
+          .insert(
+            PaymentsCompanion.insert(
+              id: 'payment',
+              cardId: const Value('card'),
+              balanceAfter: 80,
+            ),
+          );
+      final moraId = await db
+          .into(db.mora)
+          .insert(MoraCompanion.insert(cardId: 'card', createdAt: now));
+      for (var i = 0; i < 2; i++) {
+        await db
+            .into(db.moraApplications)
+            .insert(
+              MoraApplicationsCompanion.insert(
+                paymentId: 'payment',
+                moraId: moraId,
+                cents: 2000,
+                createdAt: now,
+              ),
+            );
+        await db
+            .into(db.paymentChanges)
+            .insert(
+              PaymentChangesCompanion.insert(
+                paymentId: 'payment',
+                oldAmount: 0,
+                newAmount: 20,
+                oldMoraCents: 0,
+                newMoraCents: 2000,
+                oldType: 'cash',
+                newType: 'cash',
+                createdAt: now,
+              ),
+            );
+      }
+      await db.customStatement(
+        'ALTER TABLE mora_applications DROP COLUMN sync_id',
+      );
+      await db.customStatement(
+        'ALTER TABLE payment_changes DROP COLUMN sync_id',
+      );
+      for (final column in ['sync_id', 'updated_at', 'deleted_at']) {
+        await db.customStatement(
+          'ALTER TABLE credit_plans DROP COLUMN $column',
+        );
+      }
+      await db.customStatement('PRAGMA user_version = 14');
+      await db.close();
+
+      db = AppDatabase.forTesting(NativeDatabase(file));
+      final applications = await db.select(db.moraApplications).get();
+      final changes = await db.select(db.paymentChanges).get();
+      for (final ids in [
+        applications.map((row) => row.syncId),
+        changes.map((row) => row.syncId),
+      ]) {
+        expect(ids.every((id) => id.length == 36), isTrue);
+        expect(ids.toSet(), hasLength(2));
+      }
+      final plans = await db
+          .customSelect('SELECT sync_id, updated_at FROM credit_plans')
+          .get();
+      expect(plans, isNotEmpty);
+      expect(
+        plans.every((row) => row.read<String>('sync_id').startsWith('plan-')),
+        isTrue,
+      );
+    },
+  );
 }
 
 Future<void> _deleteDirectoryWithRetries(Directory directory) async {

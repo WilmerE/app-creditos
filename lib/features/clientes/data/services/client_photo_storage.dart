@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as p;
@@ -6,8 +7,15 @@ import 'package:path_provider/path_provider.dart';
 
 @lazySingleton
 class ClientPhotoStorage {
+  ClientPhotoStorage() : _root = null;
+
+  /// Stores photos under [root]; used by tests instead of path_provider.
+  ClientPhotoStorage.withRoot(Directory root) : _root = root;
+
+  final Directory? _root;
+
   Future<Directory> _photosDirectory() async {
-    final base = await getApplicationDocumentsDirectory();
+    final base = _root ?? await getApplicationDocumentsDirectory();
     return Directory(p.join(base.path, 'client_photos'))
         .create(recursive: true);
   }
@@ -22,6 +30,14 @@ class ClientPhotoStorage {
     final copied = await File(sourcePath)
         .copy(p.join(directory.path, fileName));
     return copied.path;
+  }
+
+  /// Writes a photo downloaded from the cloud under its original file name.
+  Future<String> storeBytes(Uint8List bytes, String fileName) async {
+    final directory = await _photosDirectory();
+    final file = File(p.join(directory.path, p.basename(fileName)));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
   }
 
   /// Deletes only files managed by this storage, never arbitrary paths.

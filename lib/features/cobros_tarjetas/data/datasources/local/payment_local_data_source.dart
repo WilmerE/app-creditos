@@ -75,7 +75,7 @@ class PaymentLocalDataSource {
 
   /// Updates only the editable columns of existing installments, atomically.
   /// Throws if any installment does not exist or the receipt is duplicated.
-  Future<void> updateInstallments(List<PaymentInstallment> installments) {
+  Future<void> updateInstallments(List<PaymentInstallment> installments) async {
     installments.forEach(_validate);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -96,7 +96,7 @@ class PaymentLocalDataSource {
         }
       }
     }
-    return _database.transaction(() async {
+    await _database.transaction(() async {
       final mora = MoraLocalDataSource(_database);
       for (final cardId in installments.map((item) => item.cardId).toSet()) {
         await mora.accrue(cardId);
@@ -172,6 +172,7 @@ class PaymentLocalDataSource {
               .into(_database.paymentChanges)
               .insert(
                 PaymentChangesCompanion.insert(
+                  syncId: Value(const Uuid().v4()),
                   paymentId: existing.id,
                   oldAmount: existing.amountPaid,
                   newAmount: installment.amountPaid,
@@ -303,6 +304,7 @@ class PaymentLocalDataSource {
           .into(_database.moraApplications)
           .insert(
             MoraApplicationsCompanion.insert(
+              syncId: Value(const Uuid().v4()),
               paymentId: existing.id,
               moraId: day.id,
               cents: rate,
@@ -313,7 +315,20 @@ class PaymentLocalDataSource {
     return applied;
   }
 
-  Future<void> _recalculateBalances(Set<String> cardIds) async {
+  /// Recomputes the derived running balances, e.g. after rows arrive from
+  /// another device. Sync passes [touchUpdatedAt] false: the balance is
+  /// derived data, so it must not look like a newer edit to the other device.
+  Future<void> recalculateBalances(
+    Set<String> cardIds, {
+    bool touchUpdatedAt = true,
+  }) => _database.transaction(
+    () => _recalculateBalances(cardIds, touchUpdatedAt: touchUpdatedAt),
+  );
+
+  Future<void> _recalculateBalances(
+    Set<String> cardIds, {
+    bool touchUpdatedAt = true,
+  }) async {
     for (final cardId in cardIds) {
       final card = await (_database.select(
         _database.cardsTable,
@@ -338,12 +353,22 @@ class PaymentLocalDataSource {
           double.infinity,
         );
         if (row.balanceAfter != balance) {
+          // Locked receipts keep their audit timestamps; only the derived
+          // balance changes.
+          final locked =
+              (row.createdAt == null && row.amountPaid > 0) ||
+              (row.createdAt != null &&
+                  !updatedAt.isBefore(
+                    row.createdAt!.add(const Duration(hours: 24)),
+                  ));
           await (_database.update(
             _database.payments,
           )..where((payment) => payment.id.equals(row.id))).write(
             PaymentsCompanion(
               balanceAfter: Value(balance),
-              updatedAt: Value(updatedAt),
+              updatedAt: locked || !touchUpdatedAt
+                  ? const Value.absent()
+                  : Value(updatedAt),
             ),
           );
         }
